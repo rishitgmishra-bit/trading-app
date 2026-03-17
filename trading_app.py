@@ -19,7 +19,7 @@ SYMBOLS = {
 }
 
 WATCHLIST = {
-    "Gold": "XAUUSD=X",
+    "Gold (XAU/USD)": "XAUUSD=X",
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
@@ -58,12 +58,14 @@ with col1:
     )
     st.session_state.asset = selected
 
+    # Timeframe buttons
     tf_cols = st.columns(len(TIMEFRAMES))
 
     for i, tf in enumerate(TIMEFRAMES.keys()):
         if tf_cols[i].button(
             tf,
-            type="primary" if st.session_state.tf == tf else "secondary"
+            type="primary" if st.session_state.tf == tf else "secondary",
+            key=f"tf_{tf}"
         ):
             st.session_state.tf = tf
 
@@ -72,9 +74,9 @@ with col1:
 
     st.markdown(f"### {selected} ({st.session_state.tf})")
 
-    # 🔥 TradingView Chart
+    # ===================== TRADINGVIEW =====================
     st.components.v1.html(f"""
-    <div id="tradingview_chart"></div>
+    <div id="tv_chart"></div>
 
     <script src="https://s3.tradingview.com/tv.js"></script>
 
@@ -88,7 +90,7 @@ with col1:
         "theme": "dark",
         "style": "1",
         "locale": "en",
-        "container_id": "tradingview_chart"
+        "container_id": "tv_chart"
     }});
     </script>
     """, height=650)
@@ -100,7 +102,11 @@ with col2:
     @st.cache_data(ttl=5)
     def get_price(ticker):
         try:
-            data = yf.download(ticker, period="1d", interval="1m")
+            data = yf.download(ticker, period="1d", interval="1m", progress=False)
+
+            if data is None or data.empty:
+                return None
+
             data = data.dropna()
 
             if len(data) < 2:
@@ -118,20 +124,27 @@ with col2:
             return None
 
     for name, ticker in WATCHLIST.items():
+
         result = get_price(ticker)
 
         if result:
             price, change, pct = result
-            color = "green" if float(change) >= 0 else "red"
+            color = "green" if change >= 0 else "red"
 
+            # 🔥 CLICKABLE WATCHLIST ITEM
+            if st.button(f"{name}   {price:.2f} ({pct:.2f}%)", key=name):
+                st.session_state.asset = name
+                st.rerun()
+
+            # info display
             st.markdown(f"""
-            <div style='padding:8px;border-bottom:1px solid #222'>
-                <b>{name}</b><br>
-                <span style='color:{color}'>
+            <div style='margin-bottom:12px'>
+                <span style='color:{color}; font-size:14px'>
                     {price:.2f} ({pct:.2f}%)
                 </span>
             </div>
             """, unsafe_allow_html=True)
+
         else:
             st.write(f"{name} - No data")
 
