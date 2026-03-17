@@ -2,98 +2,74 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-import time
 import threading
+import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView (Python Version)")
-
-# ===================== ASSETS =====================
-
-ASSETS = {
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "Gold (XAU/USD)": "GC=F",
-    "Apple": "AAPL",
-    "NVIDIA": "NVDA",
-    "Microsoft": "MSFT",
-    "Tesla": "TSLA",
-    "Reliance": "RELIANCE.NS",
-    "TCS": "TCS.NS"
-}
-
 # ===================== AUTO REFRESH =====================
-
 def auto_refresh():
-    time.sleep(5)  # 🔥 updates every 5 seconds
+    time.sleep(5)
     st.rerun()
 
 threading.Thread(target=auto_refresh).start()
 
+# ===================== ASSETS =====================
+
+WATCHLIST = {
+    "XAUUSD": "GC=F",
+    "NASDAQ": "^IXIC",
+    "S&P 500": "^GSPC",
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USOIL": "CL=F",
+    "USDJPY": "USDJPY=X",
+    "TESLA": "TSLA",
+    "APPLE": "AAPL"
+}
+
 # ===================== FUNCTIONS =====================
 
 @st.cache_data(ttl=5)
-def get_data(ticker, period, interval):
-    data = yf.download(ticker, period=period, interval=interval)
-
+def get_data(ticker):
+    data = yf.download(ticker, period="1d", interval="1m")
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
-
     return data.dropna()
 
-@st.cache_data(ttl=60)
-def get_news(ticker):
-    try:
-        stock = yf.Ticker(ticker)
-        return stock.news[:5]
-    except:
-        return []
+def add_ema(data):
+    data["EMA20"] = data["Close"].ewm(span=20).mean()
+    data["EMA50"] = data["Close"].ewm(span=50).mean()
+    data["EMA200"] = data["Close"].ewm(span=200).mean()
+    return data
 
-# ===================== SIDEBAR =====================
+# ===================== LAYOUT =====================
 
-st.sidebar.header("⚙️ Settings")
-
-selected = st.sidebar.selectbox("Select Asset", list(ASSETS.keys()))
-ticker = ASSETS[selected]
-
-timeframe = st.sidebar.selectbox(
-    "Timeframe",
-    ["1d", "5d", "1mo", "3mo", "6mo", "1y"]
-)
-
-interval = st.sidebar.selectbox(
-    "Interval",
-    ["1m", "5m", "15m", "30m", "1h", "1d"]
-)
-
-# Fix invalid combo
-if timeframe == "1d" and interval == "1d":
-    interval = "5m"
-
-# ===================== MAIN LAYOUT =====================
-
-col1, col2 = st.columns([3, 1])
+left, right = st.columns([3, 1])
 
 # ===================== CHART =====================
 
-with col1:
-    st.subheader(f"{selected} Chart")
+with left:
+    st.markdown("## 📈 Trading Chart")
 
-    data = get_data(ticker, timeframe, interval)
+    selected = st.selectbox("Select Asset", list(WATCHLIST.keys()))
+    ticker = WATCHLIST[selected]
+
+    data = get_data(ticker)
 
     if not data.empty:
+        data = add_ema(data)
         latest = data.iloc[-1]
 
-        # Price display
-        st.metric(
-            "Price",
-            f"{latest['Close']:.4f}"
-        )
+        # Price Panel
+        st.markdown(f"""
+        ### {selected}
+        <span style='font-size:30px;color:#00ff88'>{latest['Close']:.2f}</span>
+        """, unsafe_allow_html=True)
 
         fig = go.Figure()
 
+        # Candles
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -102,36 +78,56 @@ with col1:
             close=data['Close']
         ))
 
+        # EMAs
+        fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], name="EMA20", line=dict(color="yellow")))
+        fig.add_trace(go.Scatter(x=data.index, y=data["EMA50"], name="EMA50", line=dict(color="green")))
+        fig.add_trace(go.Scatter(x=data.index, y=data["EMA200"], name="EMA200", line=dict(color="blue")))
+
         fig.update_layout(
-            height=600,
-            xaxis_rangeslider_visible=False,
-            template="plotly_dark"
+            height=650,
+            template="plotly_dark",
+            xaxis_rangeslider_visible=False
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.error("No data available")
+        st.error("No data")
 
-# ===================== NEWS =====================
+# ===================== WATCHLIST =====================
 
-with col2:
-    st.subheader("📰 Latest News")
+with right:
+    st.markdown("## 📊 Watchlist")
 
-    news = get_news(ticker)
+    for name, ticker in WATCHLIST.items():
+        data = get_data(ticker)
 
-    if news:
+        if not data.empty:
+            price = data["Close"].iloc[-1]
+            prev = data["Close"].iloc[-2]
+            change = price - prev
+            pct = (change / prev) * 100
+
+            color = "green" if change >= 0 else "red"
+
+            st.markdown(f"""
+            **{name}**  
+            <span style='color:{color}'>{price:.2f} ({pct:.2f}%)</span>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ===================== NEWS =====================
+
+    st.markdown("## 📰 News")
+
+    try:
+        news = yf.Ticker("AAPL").news[:5]
         for item in news:
             title = item.get("title", "No Title")
             link = item.get("link", "#")
 
-            st.markdown(f"**{title}**")
-            st.markdown(f"[Read more]({link})")
+            st.markdown(f"[{title}]({link})")
             st.write("---")
-    else:
+    except:
         st.write("No news available")
-
-# ===================== FOOTER =====================
-
-st.markdown("---")
-st.caption("Real-time simulation using yfinance (delayed data)")
