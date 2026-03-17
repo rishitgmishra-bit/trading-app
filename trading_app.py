@@ -1,40 +1,52 @@
-import streamlit as st
+# ===================== WATCHLIST =====================
+with col2:
+    st.markdown("## 📊 Watchlist")
 
-st.set_page_config(layout="wide")
+    WATCHLIST = {
+        "Gold": "XAUUSD=X",
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "USD/JPY": "USDJPY=X",
+        "Apple": "AAPL",
+        "NVIDIA": "NVDA",
+        "Tesla": "TSLA",
+        "Reliance": "RELIANCE.NS",
+        "TCS": "TCS.NS"
+    }
 
-st.title("📈 TradeView Pro (Real-Time)")
+    @st.cache_data(ttl=5)
+    def get_price(ticker):
+        data = yf.download(ticker, period="1d", interval="1m")
+        data = data.dropna()
 
-# ===================== SYMBOL MAP =====================
-SYMBOLS = {
-    "Gold (XAU/USD)": "OANDA:XAUUSD",
-    "EUR/USD": "OANDA:EURUSD",
-    "GBP/USD": "OANDA:GBPUSD",
-    "USD/JPY": "OANDA:USDJPY",
-    "Apple": "NASDAQ:AAPL",
-    "NVIDIA": "NASDAQ:NVDA",
-    "Tesla": "NASDAQ:TSLA",
-    "Reliance": "NSE:RELIANCE",
-    "TCS": "NSE:TCS"
-}
+        if len(data) < 2:
+            return None
 
-TIMEFRAMES = {
-    "1m": "1",
-    "5m": "5",
-    "15m": "15",
-    "1H": "60",
-    "1D": "D"
-}
+        price = data["Close"].iloc[-1]
+        prev = data["Close"].iloc[-2]
 
-# ===================== SESSION =====================
-if "asset" not in st.session_state:
-    st.session_state.asset = "EUR/USD"
+        change = price - prev
+        pct = (change / prev) * 100
 
-if "tf" not in st.session_state:
-    st.session_state.tf = "5m"
+        return price, change, pct
 
-# ===================== UI =====================
-col1, col2 = st.columns([5,1])
+    for name, ticker in WATCHLIST.items():
+        result = get_price(ticker)
 
+        if result:
+            price, change, pct = result
+            color = "green" if change >= 0 else "red"
+
+            st.markdown(f"""
+            <div style='padding:8px;border-bottom:1px solid #222'>
+                <b>{name}</b><br>
+                <span style='color:{color}'>
+                    {price:.2f} ({pct:.2f}%)
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.write(f"{name} - No data")
 with col1:
 
     selected = st.selectbox(
