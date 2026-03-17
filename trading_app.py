@@ -43,6 +43,14 @@ def add_ema(data):
     data["EMA200"] = data["Close"].ewm(span=200).mean()
     return data
 
+@st.cache_data(ttl=60)
+def get_news():
+    try:
+        news = yf.Ticker("AAPL").news
+        return news if news else []
+    except:
+        return []
+
 # ===================== LAYOUT =====================
 
 left, right = st.columns([3, 1])
@@ -61,7 +69,6 @@ with left:
         data = add_ema(data)
         latest = data.iloc[-1]
 
-        # Price Panel
         st.markdown(f"""
         ### {selected}
         <span style='font-size:30px;color:#00ff88'>{latest['Close']:.2f}</span>
@@ -69,7 +76,6 @@ with left:
 
         fig = go.Figure()
 
-        # Candles
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -78,7 +84,6 @@ with left:
             close=data['Close']
         ))
 
-        # EMAs
         fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], name="EMA20", line=dict(color="yellow")))
         fig.add_trace(go.Scatter(x=data.index, y=data["EMA50"], name="EMA50", line=dict(color="green")))
         fig.add_trace(go.Scatter(x=data.index, y=data["EMA200"], name="EMA200", line=dict(color="blue")))
@@ -94,7 +99,7 @@ with left:
     else:
         st.error("No data")
 
-# ===================== WATCHLIST =====================
+# ===================== RIGHT PANEL =====================
 
 with right:
     st.markdown("## 📊 Watchlist")
@@ -117,17 +122,25 @@ with right:
 
     st.markdown("---")
 
-    # ===================== NEWS =====================
+    # ===================== FIXED NEWS =====================
 
     st.markdown("## 📰 News")
 
-    try:
-        news = yf.Ticker("AAPL").news[:5]
-        for item in news:
-            title = item.get("title", "No Title")
-            link = item.get("link", "#")
+    news = get_news()
 
+    valid_news = []
+
+    for item in news:
+        title = item.get("title")
+        link = item.get("link")
+
+        # Only keep valid entries
+        if title and link:
+            valid_news.append((title, link))
+
+    if valid_news:
+        for title, link in valid_news[:5]:
             st.markdown(f"[{title}]({link})")
             st.write("---")
-    except:
-        st.write("No news available")
+    else:
+        st.write("No valid news available")
