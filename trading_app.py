@@ -7,13 +7,16 @@ import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro (Custom Engine)")
+st.title("📈 TradeView Pro (Stable)")
+
+# ===================== AUTO REFRESH =====================
+refresh = st.sidebar.checkbox("Auto Refresh (3s)", value=True)
 
 # ===================== EXCHANGE =====================
 exchange = st.sidebar.selectbox("Exchange", ["NSE", "BSE"])
 suffix = ".NS" if exchange == "NSE" else ".BO"
 
-# ===================== SYMBOL MAP =====================
+# ===================== SYMBOLS =====================
 SYMBOLS = {
     "Gold": "GC=F",
     "EUR/USD": "EURUSD=X",
@@ -36,11 +39,11 @@ SYMBOLS = {
 
 # ===================== TIMEFRAMES =====================
 TIMEFRAMES = {
-    "1m": ("1d", "1m"),
-    "5m": ("5d", "5m"),
-    "15m": ("1mo", "15m"),
-    "1H": ("3mo", "1h"),
-    "1D": ("1y", "1d")
+    "1m": ("1d","1m"),
+    "5m": ("5d","5m"),
+    "15m": ("1mo","15m"),
+    "1H": ("3mo","1h"),
+    "1D": ("1y","1d")
 }
 
 # ===================== SESSION =====================
@@ -50,18 +53,19 @@ if "asset" not in st.session_state:
 if "tf" not in st.session_state:
     st.session_state.tf = "5m"
 
-# ===================== LAYOUT =====================
-col1, col2 = st.columns([5,1])
-
-# ===================== DATA FUNCTION =====================
-@st.cache_data(ttl=3)
+# ===================== DATA =====================
+@st.cache_data(ttl=5)
 def get_data(ticker, period, interval):
     try:
         data = yf.download(ticker, period=period, interval=interval)
-        data = data.dropna()
-        return data
+        if data is not None and not data.empty:
+            return data.dropna()
+        return pd.DataFrame()
     except:
         return pd.DataFrame()
+
+# ===================== LAYOUT =====================
+col1, col2 = st.columns([5,1])
 
 # ===================== MAIN =====================
 with col1:
@@ -73,6 +77,7 @@ with col1:
     )
     st.session_state.asset = selected
 
+    # TIMEFRAMES
     tf_cols = st.columns(len(TIMEFRAMES))
     for i, tf in enumerate(TIMEFRAMES):
         if tf_cols[i].button(tf, type="primary" if tf == st.session_state.tf else "secondary"):
@@ -81,7 +86,7 @@ with col1:
     ticker = SYMBOLS[selected]
     period, interval = TIMEFRAMES[st.session_state.tf]
 
-    # 🔥 Fix Indian 1m issue
+    # 🔥 FIX Indian 1m issue
     if interval == "1m" and ticker.endswith((".NS", ".BO")):
         interval = "5m"
         period = "5d"
@@ -92,18 +97,18 @@ with col1:
     # 🔥 fallback
     if data.empty or len(data) < 10:
         data = get_data(ticker, "6mo", "1d")
-        st.warning("Switched to Daily data")
+        st.warning("Showing Daily data")
 
     if not data.empty:
 
         data = data.tail(150)
 
-        # 🔥 FOOTPRINT STYLE (delta)
+        # 🔥 FOOTPRINT STYLE
         data["Delta"] = data["Close"] - data["Open"]
 
         fig = go.Figure()
 
-        # Candles
+        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -114,7 +119,7 @@ with col1:
             decreasing_line_color='#ff4444'
         ))
 
-        # Volume bars (footprint feel)
+        # Volume bars
         fig.add_trace(go.Bar(
             x=data.index,
             y=data["Volume"],
@@ -128,7 +133,7 @@ with col1:
 
         # Price line
         price = data["Close"].iloc[-1]
-        if isinstance(price, (int, float)) and not math.isnan(price):
+        if isinstance(price,(int,float)) and not math.isnan(price):
             fig.add_hline(y=float(price), line_dash="dot", line_color="red")
 
         fig.update_layout(
@@ -141,7 +146,7 @@ with col1:
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.error("No data")
+        st.error("No data available")
 
 # ===================== WATCHLIST =====================
 with col2:
@@ -158,12 +163,14 @@ with col2:
                 pct = ((last - prev) / prev) * 100
                 color = "green" if pct >= 0 else "red"
 
-                if st.button(f"{name}"):
+                if st.button(name):
                     st.session_state.asset = name
                     st.rerun()
 
-                st.markdown(f"<span style='color:{color}'>{last:.2f} ({pct:.2f}%)</span>",
-                            unsafe_allow_html=True)
+                st.markdown(
+                    f"<span style='color:{color}'>{last:.2f} ({pct:.2f}%)</span>",
+                    unsafe_allow_html=True
+                )
 
         except:
             st.write(f"{name} - No data")
@@ -187,6 +194,7 @@ with col2:
     except:
         st.write("News unavailable")
 
-# 🔥 AUTO REFRESH
-time.sleep(3)
-st.rerun()
+# ===================== SAFE AUTO REFRESH =====================
+if refresh:
+    time.sleep(3)
+    st.experimental_rerun()
