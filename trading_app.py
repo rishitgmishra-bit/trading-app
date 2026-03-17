@@ -1,23 +1,26 @@
 import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
+import math
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Hybrid")
+st.title("📈 TradeView Hybrid (Stable)")
 
-# ===================== SYMBOL MAP =====================
+# ===================== SYMBOLS =====================
 SYMBOLS = {
+    # Forex
     "Gold (XAU/USD)": "OANDA:XAUUSD",
     "EUR/USD": "OANDA:EURUSD",
     "GBP/USD": "OANDA:GBPUSD",
     "USD/JPY": "OANDA:USDJPY",
 
+    # US Stocks
     "Apple": "NASDAQ:AAPL",
     "NVIDIA": "NASDAQ:NVDA",
     "Tesla": "NASDAQ:TSLA",
 
-    # Indian stocks (handled separately)
+    # Indian Stocks
     "Reliance": "RELIANCE.NS",
     "TCS": "TCS.NS",
     "Infosys": "INFY.NS",
@@ -29,7 +32,8 @@ SYMBOLS = {
 
 INDIAN = [
     "Reliance", "TCS", "Infosys",
-    "HDFC Bank", "ICICI Bank", "Coforge", "Nifty 50"
+    "HDFC Bank", "ICICI Bank",
+    "Coforge", "Nifty 50"
 ]
 
 TIMEFRAMES = {
@@ -38,6 +42,14 @@ TIMEFRAMES = {
     "15m": ("1mo", "15m"),
     "1H": ("3mo", "1h"),
     "1D": ("1y", "1d")
+}
+
+TV_INTERVAL = {
+    "1m": "1",
+    "5m": "5",
+    "15m": "15",
+    "1H": "60",
+    "1D": "D"
 }
 
 # ===================== SESSION =====================
@@ -60,7 +72,7 @@ with col1:
     )
     st.session_state.asset = selected
 
-    # Timeframe buttons
+    # Timeframes
     tf_cols = st.columns(len(TIMEFRAMES))
     for i, tf in enumerate(TIMEFRAMES.keys()):
         if tf_cols[i].button(
@@ -71,11 +83,11 @@ with col1:
 
     st.markdown(f"### {selected} ({st.session_state.tf})")
 
-    # ===================== HYBRID LOGIC =====================
+    # ===================== HYBRID =====================
     if selected not in INDIAN:
-        # 🔥 TradingView (real-time)
+        # 🔥 TradingView
         symbol = SYMBOLS[selected]
-        interval = st.session_state.tf.replace("m","").replace("H","60").replace("D","D")
+        interval = TV_INTERVAL[st.session_state.tf]
 
         st.components.v1.html(f"""
         <div id="tv_chart"></div>
@@ -93,14 +105,15 @@ with col1:
         """, height=650)
 
     else:
-        # 🇮🇳 Indian stocks (Plotly)
+        # 🇮🇳 Indian fallback
         ticker = SYMBOLS[selected]
         period, interval = TIMEFRAMES[st.session_state.tf]
 
         data = yf.download(ticker, period=period, interval=interval)
 
+        # 🔥 CLEAN DATA
         if not data.empty:
-            data = data.tail(200)
+            data = data.dropna().tail(200)
 
             fig = go.Figure()
 
@@ -114,9 +127,11 @@ with col1:
                 decreasing_line_color='#ff4444'
             ))
 
-            # price line
+            # 🔥 SAFE PRICE LINE
             price = data["Close"].iloc[-1]
-            fig.add_hline(y=price, line_dash="dot", line_color="red")
+
+            if isinstance(price, (int, float)) and not math.isnan(price):
+                fig.add_hline(y=float(price), line_dash="dot", line_color="red")
 
             fig.update_layout(
                 template="plotly_dark",
