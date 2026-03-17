@@ -6,127 +6,146 @@ import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 Clean Trading Chart")
-
-# ===================== AUTO REFRESH =====================
-if "last_update" not in st.session_state:
-    st.session_state.last_update = time.time()
-
-if time.time() - st.session_state.last_update > 5:
-    st.session_state.last_update = time.time()
-    st.rerun()
+st.title("📈 TradeView Live")
 
 # ===================== ASSETS =====================
 ASSETS = {
-    "Gold (XAU/USD)": ["XAUUSD=X", "GC=F"],  # fallback added
+    "Gold (XAU/USD)": ["XAUUSD=X", "GC=F"],
     "EUR/USD": ["EURUSD=X"],
     "GBP/USD": ["GBPUSD=X"],
-    "USD/JPY": ["USDJPY=X"]
+    "USD/JPY": ["USDJPY=X"],
+    "Apple": ["AAPL"],
+    "NVIDIA": ["NVDA"],
+    "Tesla": ["TSLA"],
+    "Reliance": ["RELIANCE.NS"],
+    "TCS": ["TCS.NS"]
 }
-
-# ===================== SAFE TIMEFRAME ENGINE =====================
-def get_safe_params(tf):
-    if tf == "1m":
-        return "1d", "1m"
-    elif tf == "5m":
-        return "5d", "5m"
-    elif tf == "15m":
-        return "1mo", "15m"
-    elif tf == "1H":
-        return "3mo", "1h"
-    elif tf == "1D":
-        return "1y", "1d"
-
-# ===================== DATA =====================
-@st.cache_data(ttl=5)
-def get_data(tickers, period, interval):
-
-    # Try multiple tickers (for gold fallback)
-    for ticker in tickers:
-        try:
-            data = yf.download(ticker, period=period, interval=interval)
-
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.droplevel(1)
-
-            data = data.dropna()
-
-            if not data.empty:
-                return data
-
-        except:
-            continue
-
-    return pd.DataFrame()
-
-# ===================== UI =====================
-selected = st.selectbox("Select Asset", list(ASSETS.keys()))
-tickers = ASSETS[selected]
 
 TIMEFRAMES = ["1m", "5m", "15m", "1H", "1D"]
 
-tf_cols = st.columns(len(TIMEFRAMES))
+def get_params(tf):
+    return {
+        "1m": ("1d", "1m"),
+        "5m": ("5d", "5m"),
+        "15m": ("1mo", "15m"),
+        "1H": ("3mo", "1h"),
+        "1D": ("1y", "1d")
+    }[tf]
+
+# ===================== SESSION =====================
+if "asset" not in st.session_state:
+    st.session_state.asset = "EUR/USD"
 
 if "tf" not in st.session_state:
-    st.session_state["tf"] = "5m"
+    st.session_state.tf = "5m"
 
-for i, tf in enumerate(TIMEFRAMES):
-    if tf_cols[i].button(tf):
-        st.session_state["tf"] = tf
+# ===================== DATA =====================
+def get_data(tickers, period, interval):
+    for t in tickers:
+        try:
+            data = yf.download(t, period=period, interval=interval)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.droplevel(1)
+            data = data.dropna()
+            if not data.empty:
+                return data
+        except:
+            continue
+    return pd.DataFrame()
 
-selected_tf = st.session_state["tf"]
+# ===================== UI =====================
+col1, col2 = st.columns([5,1])
 
-period, interval = get_safe_params(selected_tf)
+with col1:
 
-st.markdown(f"### {selected} ({selected_tf})")
-
-# ===================== FETCH DATA =====================
-data = get_data(tickers, period, interval)
-
-# ===================== FALLBACK FIX =====================
-if data.empty and selected_tf == "1m":
-    # auto fallback if 1m fails
-    period, interval = "5d", "5m"
-    data = get_data(tickers, period, interval)
-    st.warning("1m data unavailable → switched to 5m")
-
-# ===================== CHART =====================
-if not data.empty:
-
-    data = data.tail(300)
-
-    latest = data.iloc[-1]
-    price = latest["Close"]
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data['Open'],
-        high=data['High'],
-        low=data['Low'],
-        close=data['Close'],
-        increasing_line_color='#00ff88',
-        decreasing_line_color='#ff4444'
-    ))
-
-    fig.add_hline(y=price, line_dash="dot", line_color="red")
-
-    fig.update_layout(
-        template="plotly_dark",
-        height=700,
-        xaxis_rangeslider_visible=False,
-        plot_bgcolor="#000000",
-        paper_bgcolor="#000000",
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=False)
+    selected = st.selectbox(
+        "Asset",
+        list(ASSETS.keys()),
+        index=list(ASSETS.keys()).index(st.session_state.asset)
     )
+    st.session_state.asset = selected
+    tickers = ASSETS[selected]
 
-    st.plotly_chart(fig, use_container_width=True)
+    tf_cols = st.columns(len(TIMEFRAMES))
 
-    st.markdown(f"""
-    <span style='font-size:28px;color:#00ff88'>Price: {price:.5f}</span>
-    """, unsafe_allow_html=True)
+    for i, tf in enumerate(TIMEFRAMES):
+        if tf_cols[i].button(
+            tf,
+            type="primary" if st.session_state.tf == tf else "secondary"
+        ):
+            st.session_state.tf = tf
 
-else:
-    st.error("No data available (yfinance limitation)")
+    tf = st.session_state.tf
+    period, interval = get_params(tf)
+
+    st.markdown(f"### {selected} ({tf})")
+
+    # 🔥 LIVE CONTAINER
+    chart_placeholder = st.empty()
+    price_placeholder = st.empty()
+
+    # ===================== LIVE LOOP =====================
+    while True:
+
+        data = get_data(tickers, period, interval)
+
+        if not data.empty:
+            data = data.tail(200)
+            price = data["Close"].iloc[-1]
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                increasing_line_color='#00ff88',
+                decreasing_line_color='#ff4444'
+            ))
+
+            fig.add_hline(y=price, line_dash="dot", line_color="red")
+
+            fig.update_layout(
+                template="plotly_dark",
+                height=600,
+                xaxis_rangeslider_visible=False,
+                plot_bgcolor="#000000",
+                paper_bgcolor="#000000",
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=False)
+            )
+
+            # 🔥 UPDATE WITHOUT RERUN
+            chart_placeholder.plotly_chart(fig, use_container_width=True)
+
+            price_placeholder.markdown(
+                f"<h2 style='color:#00ff88'>Price: {price:.5f}</h2>",
+                unsafe_allow_html=True
+            )
+
+        else:
+            chart_placeholder.error("No data")
+
+        time.sleep(5)  # 🔥 update every 5 sec
+
+# ===================== WATCHLIST =====================
+with col2:
+    st.markdown("## 📊 Watchlist")
+
+    for name, tickers in ASSETS.items():
+        data = get_data(tickers, "1d", "5m")
+
+        if not data.empty:
+            price = data["Close"].iloc[-1]
+            prev = data["Close"].iloc[-2]
+            change = price - prev
+            pct = (change / prev) * 100
+
+            color = "green" if change >= 0 else "red"
+
+            st.markdown(f"""
+            **{name}**  
+            <span style='color:{color}'>{price:.2f} ({pct:.2f}%)</span>
+            """, unsafe_allow_html=True)
