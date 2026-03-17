@@ -174,3 +174,7 @@ with tab3:
 
 st.sidebar.markdown("---")
 st.sidebar.write("Welcome")
+
+st.markdown("""
+    <div style='position: fixed; right: 20px; bottom: 10px; color: gray; font-size: 16px; z-index: 9999;'>Rishit</div>
+""", unsafe_allow_html=True)
