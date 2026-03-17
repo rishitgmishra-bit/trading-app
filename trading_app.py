@@ -5,7 +5,7 @@ import pandas as pd
 import math
 
 st.set_page_config(layout="wide")
-st.title("📈 TradeView (Stable Build)")
+st.title("📈 TradeView (Fixed Candles)")
 
 # ================= SYMBOLS =================
 SYMBOLS = {
@@ -43,14 +43,21 @@ if "asset" not in st.session_state:
 if "tf" not in st.session_state:
     st.session_state.tf = "5m"
 
-# ================= DATA =================
+# ================= DATA FUNCTION =================
 @st.cache_data(ttl=10)
 def get_data(ticker, period, interval):
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False)
+
         if df is None or df.empty:
             return pd.DataFrame()
-        return df.dropna()
+
+        # 🔥 FIX: do NOT drop everything blindly
+        df = df[['Open','High','Low','Close','Volume']]
+        df = df.dropna(how='all')
+
+        return df
+
     except:
         return pd.DataFrame()
 
@@ -70,13 +77,13 @@ with col1:
     # Timeframes
     tf_cols = st.columns(len(TIMEFRAMES))
     for i, tf in enumerate(TIMEFRAMES):
-        if tf_cols[i].button(tf, type="primary" if tf==st.session_state.tf else "secondary"):
+        if tf_cols[i].button(tf, type="primary" if tf == st.session_state.tf else "secondary"):
             st.session_state.tf = tf
 
     ticker = SYMBOLS[selected]
     period, interval = TIMEFRAMES[st.session_state.tf]
 
-    # 🔥 Fix Indian 1m
+    # 🔥 Fix Indian 1m issue
     if interval == "1m" and ticker.endswith(".NS"):
         interval = "5m"
         period = "5d"
@@ -84,20 +91,23 @@ with col1:
 
     data = get_data(ticker, period, interval)
 
-    # 🔥 fallback
-    if data.empty:
+    # 🔥 fallback to daily if needed
+    if data.empty or data["Close"].notna().sum() < 5:
         data = get_data(ticker, "6mo", "1d")
         st.warning("Showing Daily data")
 
-    if not data.empty and len(data) > 5:
+    # ================= CHART =================
+    if (
+        not data.empty
+        and "Open" in data.columns
+        and data["Close"].notna().sum() > 5
+    ):
 
         data = data.tail(150)
 
-        # 🔥 Footprint style
-        data["Delta"] = data["Close"] - data["Open"]
-
         fig = go.Figure()
 
+        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -108,19 +118,25 @@ with col1:
             decreasing_line_color='#ff4444'
         ))
 
-        fig.add_trace(go.Bar(
-            x=data.index,
-            y=data["Volume"],
-            marker_color=[
-                "#00ff88" if d >= 0 else "#ff4444"
-                for d in data["Delta"]
-            ],
-            opacity=0.25,
-            yaxis="y2"
-        ))
+        # 🔥 Footprint-style volume
+        if "Volume" in data.columns:
+            data["Delta"] = data["Close"] - data["Open"]
 
-        price = float(data["Close"].iloc[-1])
-        fig.add_hline(y=price, line_dash="dot", line_color="red")
+            fig.add_trace(go.Bar(
+                x=data.index,
+                y=data["Volume"],
+                marker_color=[
+                    "#00ff88" if d >= 0 else "#ff4444"
+                    for d in data["Delta"]
+                ],
+                opacity=0.25,
+                yaxis="y2"
+            ))
+
+        # Price line
+        price = data["Close"].iloc[-1]
+        if isinstance(price,(int,float)) and not math.isnan(price):
+            fig.add_hline(y=float(price), line_dash="dot", line_color="red")
 
         fig.update_layout(
             template="plotly_dark",
