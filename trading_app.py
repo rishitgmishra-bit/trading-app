@@ -3,6 +3,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import time
+import threading
 
 st.set_page_config(layout="wide")
 st.title("Multi-Market Trading Dashboard")
@@ -10,26 +11,33 @@ st.title("Multi-Market Trading Dashboard")
 # ===================== ASSETS =====================
 
 ASSETS = {
+    # Stocks
     "Apple (AAPL)": "AAPL",
     "NVIDIA (NVDA)": "NVDA",
     "Microsoft (MSFT)": "MSFT",
     "Google (GOOGL)": "GOOGL",
     "Tesla (TSLA)": "TSLA",
+
+    # Indian
     "Reliance (RELIANCE.NS)": "RELIANCE.NS",
     "TCS (TCS.NS)": "TCS.NS",
     "Infosys (INFY.NS)": "INFY.NS",
+
+    # Forex
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
     "USD/INR": "USDINR=X",
-    "Gold (XAU/USD)": "XAUUSD=X"
+
+    # Gold FIXED
+    "Gold (XAU/USD)": "GC=F"
 }
 
 # ===================== FUNCTIONS =====================
 
-@st.cache_data(ttl=5)
-def get_data(ticker):
-    data = yf.download(ticker, period="1d", interval="1m")
+@st.cache_data(ttl=10)
+def get_data(ticker, period, interval):
+    data = yf.download(ticker, period=period, interval=interval)
 
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
@@ -48,54 +56,161 @@ def add_indicators(data):
 
     return data
 
-# ===================== UI =====================
+def get_news(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        return stock.news[:5]
+    except:
+        return []
 
-selected_asset = st.sidebar.selectbox("Select Market", list(ASSETS.keys()))
-ticker = ASSETS[selected_asset]
+# ===================== TABS =====================
 
-placeholder = st.empty()
+tab1, tab2, tab3 = st.tabs(["Chart", "Investments", "News"])
 
-# ===================== LOOP =====================
+# ===================== TAB 1 =====================
 
-while True:
-    data = get_data(ticker)
+with tab1:
+    st.header("Live Chart")
+
+    selected_asset = st.sidebar.selectbox("Market", list(ASSETS.keys()))
+    ticker = ASSETS[selected_asset]
+
+    timeframe = st.sidebar.selectbox(
+        "Timeframe",
+        ["1d", "5d", "1mo", "3mo", "6mo", "1y"]
+    )
+
+    interval = st.sidebar.selectbox(
+        "Interval",
+        ["1m", "5m", "15m", "30m", "1h", "1d"]
+    )
+
+    if timeframe == "1d" and interval == "1d":
+        interval = "5m"
+
+    data = get_data(ticker, timeframe, interval)
 
     if not data.empty:
         data = add_indicators(data)
         latest = data.iloc[-1]
 
-        with placeholder.container():
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Price", f"{latest['Close']:.5f}")
+        col2.metric("High", f"{latest['High']:.5f}")
+        col3.metric("Low", f"{latest['Low']:.5f}")
 
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Price", f"{latest['Close']:.5f}")
-            col2.metric("High", f"{latest['High']:.5f}")
-            col3.metric("Low", f"{latest['Low']:.5f}")
+        fig = go.Figure()
 
-            fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close']
+        ))
 
-            fig.add_trace(go.Candlestick(
-                x=data.index,
-                open=data['Open'],
-                high=data['High'],
-                low=data['Low'],
-                close=data['Close']
-            ))
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["EMA20"],
+            name="EMA 20"
+        ))
 
-            fig.add_trace(go.Scatter(
-                x=data.index,
-                y=data["EMA20"],
-                name="EMA 20"
-            ))
+        fig.update_layout(
+            title=f"{selected_asset}",
+            xaxis_rangeslider_visible=False,
+            height=600
+        )
 
-            fig.update_layout(
-                title=f"{selected_asset}",
-                xaxis_rangeslider_visible=False,
-                height=600
-            )
+        st.plotly_chart(fig, use_container_width=True)
 
-            st.plotly_chart(fig, use_container_width=True)
+        # RSI
+        st.subheader("RSI")
+
+        rsi_fig = go.Figure()
+        rsi_fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["RSI"]
+        ))
+
+        rsi_fig.add_hline(y=70)
+        rsi_fig.add_hline(y=30)
+
+        st.plotly_chart(rsi_fig, use_container_width=True)
 
     else:
         st.error("No data available")
 
-    time.sleep(5)
+# ===================== TAB 2 =====================
+
+with tab2:
+    st.header("Investment Ideas")
+
+    cols = st.columns(3)
+
+    for i, (name, ticker) in enumerate(ASSETS.items()):
+        with cols[i % 3]:
+            st.markdown(f"### {name}")
+
+            data = get_data(ticker, "6mo", "1d")
+
+            if not data.empty:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=data.index,
+                    y=data["Close"]
+                ))
+
+                fig.update_layout(height=250)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.write("No data")
+
+# ===================== TAB 3 =====================
+
+with tab3:
+    st.header("Market News")
+
+    news_tab1, news_tab2 = st.tabs(["Global", "India"])
+
+    with news_tab1:
+        news = get_news("AAPL")
+
+        if news:
+            for item in news:
+                title = item.get("title", "No Title")
+                link = item.get("link", "#")
+
+                st.markdown(f"### {title}")
+                st.markdown(f"[Read more]({link})")
+                st.write("---")
+        else:
+            st.write("No news available.")
+
+    with news_tab2:
+        news = get_news("RELIANCE.NS")
+
+        if news:
+            for item in news:
+                title = item.get("title", "No Title")
+                link = item.get("link", "#")
+
+                st.markdown(f"### {title}")
+                st.markdown(f"[Read more]({link})")
+                st.write("---")
+        else:
+            st.write("No news available.")
+
+# ===================== AUTO REFRESH =====================
+
+def auto_refresh():
+    time.sleep(10)
+    st.rerun()
+
+threading.Thread(target=auto_refresh).start()
+
+# ===================== FOOTER =====================
+
+st.markdown(
+    "<div style='position: fixed; right: 20px; bottom: 10px;'>Rishit</div>",
+    unsafe_allow_html=True
+)
