@@ -3,33 +3,58 @@ import yfinance as yf
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro (Real-Time)")
+st.title("📈 TradeView Pro (Advanced)")
 
-# ===================== SYMBOLS =====================
+# ===================== EXCHANGE TOGGLE =====================
+exchange = st.sidebar.selectbox("Select Exchange", ["NSE", "BSE"])
+
+suffix = ".NS" if exchange == "NSE" else ".BO"
+
+# ===================== SYMBOL MAP =====================
 SYMBOLS = {
     "Gold (XAU/USD)": "OANDA:XAUUSD",
     "EUR/USD": "OANDA:EURUSD",
     "GBP/USD": "OANDA:GBPUSD",
     "USD/JPY": "OANDA:USDJPY",
+
     "Apple": "NASDAQ:AAPL",
     "NVIDIA": "NASDAQ:NVDA",
     "Tesla": "NASDAQ:TSLA",
-    "Reliance": "NSE:RELIANCE",
-    "TCS": "NSE:TCS"
+
+    # 🇮🇳 Indian Stocks
+    "Reliance": f"{exchange}:RELIANCE",
+    "TCS": f"{exchange}:TCS",
+    "Infosys": f"{exchange}:INFY",
+    "HDFC Bank": f"{exchange}:HDFCBANK",
+    "ICICI Bank": f"{exchange}:ICICIBANK",
+    "Coforge": f"{exchange}:COFORGE",
+
+    # 🔥 Index
+    "Nifty 50": f"{exchange}:NIFTY"
 }
 
+# ===================== WATCHLIST =====================
 WATCHLIST = {
     "Gold": "XAUUSD=X",
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
+
     "Apple": "AAPL",
     "NVIDIA": "NVDA",
     "Tesla": "TSLA",
-    "Reliance": "RELIANCE.NS",
-    "TCS": "TCS.NS"
+
+    "Reliance": f"RELIANCE{suffix}",
+    "TCS": f"TCS{suffix}",
+    "Infosys": f"INFY{suffix}",
+    "HDFC Bank": f"HDFCBANK{suffix}",
+    "ICICI Bank": f"ICICIBANK{suffix}",
+    "Coforge": f"COFORGE{suffix}",
+
+    "Nifty 50": "^NSEI"
 }
 
+# ===================== TIMEFRAMES =====================
 TIMEFRAMES = {
     "1m": "1",
     "5m": "5",
@@ -58,8 +83,8 @@ with col1:
     )
     st.session_state.asset = selected
 
+    # Timeframes
     tf_cols = st.columns(len(TIMEFRAMES))
-
     for i, tf in enumerate(TIMEFRAMES.keys()):
         if tf_cols[i].button(
             tf,
@@ -67,14 +92,14 @@ with col1:
         ):
             st.session_state.tf = tf
 
-    symbol = SYMBOLS[selected]
+    symbol = SYMBOLS[st.session_state.asset]
     interval = TIMEFRAMES[st.session_state.tf]
 
-    st.markdown(f"### {selected} ({st.session_state.tf})")
+    st.markdown(f"### {st.session_state.asset} ({st.session_state.tf})")
 
-    # 🔥 TradingView Chart
+    # 🔥 TradingView chart (fixed reload issue)
     st.components.v1.html(f"""
-    <div id="tradingview_chart"></div>
+    <div id="tv_chart_{symbol}"></div>
 
     <script src="https://s3.tradingview.com/tv.js"></script>
 
@@ -88,7 +113,7 @@ with col1:
         "theme": "dark",
         "style": "1",
         "locale": "en",
-        "container_id": "tradingview_chart"
+        "container_id": "tv_chart_{symbol}"
     }});
     </script>
     """, height=650)
@@ -113,7 +138,6 @@ with col2:
             pct = (change / prev) * 100
 
             return price, change, pct
-
         except:
             return None
 
@@ -122,16 +146,19 @@ with col2:
 
         if result:
             price, change, pct = result
-            color = "green" if float(change) >= 0 else "red"
+            color = "green" if change >= 0 else "red"
+
+            # 🔥 CLICKABLE WATCHLIST
+            if st.button(f"{name} ({price:.2f}) {pct:.2f}%"):
+                st.session_state.asset = name
+                st.rerun()
 
             st.markdown(f"""
-            <div style='padding:8px;border-bottom:1px solid #222'>
-                <b>{name}</b><br>
-                <span style='color:{color}'>
-                    {price:.2f} ({pct:.2f}%)
-                </span>
-            </div>
+            <span style='color:{color}'>
+                {price:.2f} ({pct:.2f}%)
+            </span>
             """, unsafe_allow_html=True)
+
         else:
             st.write(f"{name} - No data")
 
@@ -151,12 +178,9 @@ with col2:
             if title and link:
                 valid_news.append((title, link))
 
-        if valid_news:
-            for title, link in valid_news[:5]:
-                st.markdown(f"[{title}]({link})")
-                st.write("---")
-        else:
-            st.write("No news available")
+        for title, link in valid_news[:5]:
+            st.markdown(f"[{title}]({link})")
+            st.write("---")
 
     except:
         st.write("News unavailable")
