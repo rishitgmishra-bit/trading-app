@@ -1,108 +1,157 @@
 import streamlit as st
-import pandas as pd
+import yfinance as yf
 import plotly.graph_objects as go
-import oandapyV20
-from oandapyV20.endpoints.pricing import PricingStream
-import threading
-from datetime import datetime
+import pandas as pd
+import time
 
 st.set_page_config(layout="wide")
 
-# ===================== YOUR OANDA KEYS =====================
-API_KEY = "YOUR_API_KEY"
-ACCOUNT_ID = "YOUR_ACCOUNT_ID"
+st.title("📈 TradeView (Clean Version)")
 
-client = oandapyV20.API(access_token=API_KEY)
+# ===================== AUTO REFRESH =====================
+if "last_update" not in st.session_state:
+    st.session_state.last_update = time.time()
 
-# ===================== SELECT INSTRUMENT =====================
+if time.time() - st.session_state.last_update > 5:
+    st.session_state.last_update = time.time()
+    st.rerun()
+
+# ===================== ASSETS =====================
 ASSETS = {
-    "Gold (XAU/USD)": "XAU_USD",   # may not work on all accounts
-    "EUR/USD": "EUR_USD",
-    "GBP/USD": "GBP_USD",
-    "USD/JPY": "USD_JPY"
+    "Gold (XAU/USD)": "XAUUSD=X",
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "NASDAQ": "^IXIC",
+    "S&P 500": "^GSPC",
+    "Tesla": "TSLA",
+    "Apple": "AAPL"
 }
 
-selected = st.sidebar.selectbox("Select Asset", list(ASSETS.keys()))
-instrument = ASSETS[selected]
+# ===================== TIMEFRAMES =====================
+TIMEFRAMES = {
+    "1m": ("1d", "1m"),
+    "5m": ("5d", "5m"),
+    "15m": ("5d", "15m"),
+    "1H": ("1mo", "1h"),
+    "4H": ("3mo", "1h"),
+    "1D": ("1y", "1d")
+}
 
-# ===================== DATA STORAGE =====================
-ticks = []
-candles = []
+# ===================== DATA =====================
+@st.cache_data(ttl=5)
+def get_data(ticker, period, interval):
+    data = yf.download(ticker, period=period, interval=interval)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.droplevel(1)
+    return data.dropna()
 
-# ===================== STREAM FUNCTION =====================
-def stream_data():
-    params = {"instruments": instrument}
-    r = PricingStream(accountID=ACCOUNT_ID, params=params)
+# ===================== LAYOUT =====================
+col1, col2 = st.columns([5,1])
 
-    for tick in client.request(r):
-        if tick["type"] == "PRICE":
-            bid = float(tick["bids"][0]["price"])
-            ask = float(tick["asks"][0]["price"])
-            price = (bid + ask) / 2
+# ===================== MAIN CHART =====================
+with col1:
+    selected = st.selectbox("Select Asset", list(ASSETS.keys()))
+    ticker = ASSETS[selected]
 
-            ticks.append({
-                "time": datetime.utcnow(),
-                "price": price
-            })
+    # Timeframe buttons
+    tf_cols = st.columns(len(TIMEFRAMES))
 
-# Start streaming thread once
-if "stream_started" not in st.session_state:
-    threading.Thread(target=stream_data, daemon=True).start()
-    st.session_state.stream_started = True
+    if "tf" not in st.session_state:
+        st.session_state["tf"] = "1m"
 
-# ===================== CANDLE CREATION =====================
-def build_candles():
-    global candles
+    for i, tf in enumerate(TIMEFRAMES.keys()):
+        if tf_cols[i].button(tf):
+            st.session_state["tf"] = tf
 
-    if len(ticks) < 5:
-        return
+    selected_tf = st.session_state["tf"]
+    period, interval = TIMEFRAMES[selected_tf]
 
-    df = pd.DataFrame(ticks)
+    st.markdown(f"### {selected} ({selected_tf})")
 
-    # resample into 1-minute candles
-    df.set_index("time", inplace=True)
+    data = get_data(ticker, period, interval)
 
-    ohlc = df["price"].resample("1min").ohlc().dropna()
-
-    candles = ohlc.reset_index()
-
-# ===================== UI =====================
-
-st.title("🔥 Real-Time Trading (OANDA)")
-
-placeholder = st.empty()
-
-# ===================== MAIN LOOP =====================
-while True:
-    build_candles()
-
-    if len(candles) > 5:
-
-        latest_price = candles["close"].iloc[-1]
+    if not data.empty:
+        latest = data.iloc[-1]
+        price = latest["Close"]
 
         fig = go.Figure()
 
+        # Candlestick
         fig.add_trace(go.Candlestick(
-            x=candles["time"],
-            open=candles["open"],
-            high=candles["high"],
-            low=candles["low"],
-            close=candles["close"],
-            increasing_line_color="#00ff88",
-            decreasing_line_color="#ff4444"
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close'],
+            increasing_line_color='#00ff88',
+            decreasing_line_color='#ff4444'
         ))
+
+        # Price line
+        fig.add_hline(y=price, line_dash="dot", line_color="red")
 
         fig.update_layout(
             template="plotly_dark",
-            height=600,
-            xaxis_rangeslider_visible=False
+            height=700,
+            xaxis_rangeslider_visible=False,
+            plot_bgcolor="#000000",
+            paper_bgcolor="#000000",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False)
         )
 
-        with placeholder.container():
-            st.metric("Price", f"{latest_price:.4f}")
-            st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(f"""
+        <span style='font-size:28px;color:#00ff88'>Price: {price:.2f}</span>
+        """, unsafe_allow_html=True)
 
     else:
-        st.write("Waiting for data...")
+        st.error("No data available")
 
-    st.sleep(1)
+# ===================== SIDE PANEL =====================
+with col2:
+    st.markdown("## 📊 Watchlist")
+
+    for name, tkr in ASSETS.items():
+        data = get_data(tkr, "1d", "5m")
+
+        if not data.empty:
+            price = data["Close"].iloc[-1]
+            prev = data["Close"].iloc[-2]
+            change = price - prev
+            pct = (change / prev) * 100
+
+            color = "green" if change >= 0 else "red"
+
+            st.markdown(f"""
+            **{name}**  
+            <span style='color:{color}'>{price:.2f} ({pct:.2f}%)</span>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ===================== NEWS =====================
+    st.markdown("## 📰 News")
+
+    try:
+        news = yf.Ticker("AAPL").news
+
+        valid_news = []
+        for item in news:
+            title = item.get("title")
+            link = item.get("link")
+
+            if title and link:
+                valid_news.append((title, link))
+
+        if valid_news:
+            for title, link in valid_news[:5]:
+                st.markdown(f"[{title}]({link})")
+                st.write("---")
+        else:
+            st.write("No valid news")
+
+    except:
+        st.write("News not available")
