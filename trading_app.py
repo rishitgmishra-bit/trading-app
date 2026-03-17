@@ -1,12 +1,15 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Live")
+st.title("📈 TradeView Live (Stable)")
+
+# ===================== AUTO REFRESH =====================
+st_autorefresh(interval=5000, key="datarefresh")  # every 5 sec
 
 # ===================== ASSETS =====================
 ASSETS = {
@@ -40,6 +43,7 @@ if "tf" not in st.session_state:
     st.session_state.tf = "5m"
 
 # ===================== DATA =====================
+@st.cache_data(ttl=5)
 def get_data(tickers, period, interval):
     for t in tickers:
         try:
@@ -66,8 +70,8 @@ with col1:
     st.session_state.asset = selected
     tickers = ASSETS[selected]
 
+    # Timeframes
     tf_cols = st.columns(len(TIMEFRAMES))
-
     for i, tf in enumerate(TIMEFRAMES):
         if tf_cols[i].button(
             tf,
@@ -80,55 +84,50 @@ with col1:
 
     st.markdown(f"### {selected} ({tf})")
 
-    # 🔥 LIVE CONTAINER
-    chart_placeholder = st.empty()
-    price_placeholder = st.empty()
+    data = get_data(tickers, period, interval)
 
-    # ===================== LIVE LOOP =====================
-    while True:
-
+    if data.empty and tf == "1m":
+        period, interval = "5d", "5m"
         data = get_data(tickers, period, interval)
+        st.warning("1m unavailable → switched to 5m")
 
-        if not data.empty:
-            data = data.tail(200)
-            price = data["Close"].iloc[-1]
+    if not data.empty:
+        data = data.tail(200)
+        price = data["Close"].iloc[-1]
 
-            fig = go.Figure()
+        fig = go.Figure()
 
-            fig.add_trace(go.Candlestick(
-                x=data.index,
-                open=data['Open'],
-                high=data['High'],
-                low=data['Low'],
-                close=data['Close'],
-                increasing_line_color='#00ff88',
-                decreasing_line_color='#ff4444'
-            ))
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close'],
+            increasing_line_color='#00ff88',
+            decreasing_line_color='#ff4444'
+        ))
 
-            fig.add_hline(y=price, line_dash="dot", line_color="red")
+        fig.add_hline(y=price, line_dash="dot", line_color="red")
 
-            fig.update_layout(
-                template="plotly_dark",
-                height=600,
-                xaxis_rangeslider_visible=False,
-                plot_bgcolor="#000000",
-                paper_bgcolor="#000000",
-                xaxis=dict(showgrid=False),
-                yaxis=dict(showgrid=False)
-            )
+        fig.update_layout(
+            template="plotly_dark",
+            height=600,
+            xaxis_rangeslider_visible=False,
+            plot_bgcolor="#000000",
+            paper_bgcolor="#000000",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False)
+        )
 
-            # 🔥 UPDATE WITHOUT RERUN
-            chart_placeholder.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
-            price_placeholder.markdown(
-                f"<h2 style='color:#00ff88'>Price: {price:.5f}</h2>",
-                unsafe_allow_html=True
-            )
+        st.markdown(
+            f"<h2 style='color:#00ff88'>Price: {price:.5f}</h2>",
+            unsafe_allow_html=True
+        )
 
-        else:
-            chart_placeholder.error("No data")
-
-        time.sleep(5)  # 🔥 update every 5 sec
+    else:
+        st.error("No data")
 
 # ===================== WATCHLIST =====================
 with col2:
