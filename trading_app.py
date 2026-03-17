@@ -152,7 +152,7 @@ with tab3:
         ]
         for item in sample_news_usa:
             st.write(f"**{item['title']}**")
-            st.write(f"Published: {item['date']}"0
+            st.write(f"Published: {item['date']}")
             st.write(f"[Read more]({item['link']})")
             st.write("---")
 
