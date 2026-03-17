@@ -3,15 +3,10 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import time
+import threading
 
 st.set_page_config(layout="wide")
-
 st.title("Advanced Trading Dashboard")
-
-# ===================== AUTO REFRESH =====================
-# Refresh every 60 seconds
-time.sleep(60)
-st.rerun()
 
 # ===================== FUNCTIONS =====================
 
@@ -38,6 +33,26 @@ def add_indicators(data):
 
     rs = gain / loss
     data["RSI"] = 100 - (100 / (1 + rs))
+
+    return data
+
+def generate_signals(data):
+    data["Signal"] = 0
+
+    for i in range(1, len(data)):
+        # BUY condition
+        if (
+            data["Close"].iloc[i] > data["EMA20"].iloc[i]
+            and data["RSI"].iloc[i] < 30
+        ):
+            data.loc[data.index[i], "Signal"] = 1
+
+        # SELL condition
+        elif (
+            data["Close"].iloc[i] < data["EMA20"].iloc[i]
+            and data["RSI"].iloc[i] > 70
+        ):
+            data.loc[data.index[i], "Signal"] = -1
 
     return data
 
@@ -72,15 +87,15 @@ with tab1:
         ["1m", "5m", "15m", "30m", "1h", "1d"]
     )
 
-    # Fix invalid combos
+    # Fix invalid combo
     if timeframe == "1d" and interval == "1d":
         interval = "5m"
 
-    with st.spinner("Fetching data..."):
-        data = get_data(stock, timeframe, interval)
+    data = get_data(stock, timeframe, interval)
 
     if not data.empty:
         data = add_indicators(data)
+        data = generate_signals(data)
 
         latest = data.iloc[-1]
 
@@ -91,6 +106,7 @@ with tab1:
 
         fig = go.Figure()
 
+        # Candles
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -100,20 +116,42 @@ with tab1:
             name="Candles"
         ))
 
+        # EMA
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["EMA20"],
             name="EMA 20"
         ))
 
+        # VWAP
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["VWAP"],
             name="VWAP"
         ))
 
+        # BUY signals
+        buy_signals = data[data["Signal"] == 1]
+        fig.add_trace(go.Scatter(
+            x=buy_signals.index,
+            y=buy_signals["Close"],
+            mode="markers",
+            marker=dict(symbol="triangle-up", size=10),
+            name="BUY"
+        ))
+
+        # SELL signals
+        sell_signals = data[data["Signal"] == -1]
+        fig.add_trace(go.Scatter(
+            x=sell_signals.index,
+            y=sell_signals["Close"],
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=10),
+            name="SELL"
+        ))
+
         fig.update_layout(
-            title=f"{stock} Chart",
+            title=f"{stock} Chart with Signals",
             xaxis_rangeslider_visible=False,
             height=600
         )
@@ -194,6 +232,14 @@ with tab3:
             st.write(f"**{item['title']}**")
             st.write(f"[Read more]({item['link']})")
             st.write("---")
+
+# ===================== AUTO REFRESH (NON-BLOCKING) =====================
+
+def auto_refresh():
+    time.sleep(60)
+    st.rerun()
+
+threading.Thread(target=auto_refresh).start()
 
 # ===================== FOOTER =====================
 
