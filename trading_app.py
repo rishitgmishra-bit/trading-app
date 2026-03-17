@@ -2,110 +2,126 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-import threading
 import time
 
 st.set_page_config(layout="wide")
 
+st.title("📈 TradeView Style Chart")
+
 # ===================== AUTO REFRESH =====================
-def auto_refresh():
-    time.sleep(5)
+if "last_update" not in st.session_state:
+    st.session_state.last_update = time.time()
+
+if time.time() - st.session_state.last_update > 5:
+    st.session_state.last_update = time.time()
     st.rerun()
 
-threading.Thread(target=auto_refresh).start()
-
 # ===================== ASSETS =====================
-
-WATCHLIST = {
-    "XAUUSD": "GC=F",
+ASSETS = {
+    "Gold (XAU/USD)": "XAUUSD=X",
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
     "NASDAQ": "^IXIC",
     "S&P 500": "^GSPC",
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "USOIL": "CL=F",
-    "USDJPY": "USDJPY=X",
-    "TESLA": "TSLA",
-    "APPLE": "AAPL"
+    "Tesla": "TSLA",
+    "Apple": "AAPL"
 }
 
-# ===================== FUNCTIONS =====================
+# ===================== TIMEFRAME LOGIC =====================
+TIMEFRAMES = {
+    "1m": ("1d", "1m"),
+    "5m": ("5d", "5m"),
+    "15m": ("5d", "15m"),
+    "1H": ("1mo", "1h"),
+    "4H": ("3mo", "1h"),
+    "1D": ("1y", "1d")
+}
 
+# ===================== DATA =====================
 @st.cache_data(ttl=5)
-def get_data(ticker):
-    data = yf.download(ticker, period="1d", interval="1m")
+def get_data(ticker, period, interval):
+    data = yf.download(ticker, period=period, interval=interval)
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.droplevel(1)
     return data.dropna()
 
-def add_ema(data):
-    data["EMA20"] = data["Close"].ewm(span=20).mean()
-    data["EMA50"] = data["Close"].ewm(span=50).mean()
-    data["EMA200"] = data["Close"].ewm(span=200).mean()
-    return data
+# ===================== UI =====================
+col1, col2 = st.columns([5,1])
 
-@st.cache_data(ttl=60)
-def get_news():
-    try:
-        news = yf.Ticker("AAPL").news
-        return news if news else []
-    except:
-        return []
+with col1:
+    selected = st.selectbox("Select Asset", list(ASSETS.keys()))
+    ticker = ASSETS[selected]
 
-# ===================== LAYOUT =====================
+    # Timeframe buttons
+    tf_cols = st.columns(len(TIMEFRAMES))
+    selected_tf = None
 
-left, right = st.columns([3, 1])
+    for i, tf in enumerate(TIMEFRAMES.keys()):
+        if tf_cols[i].button(tf):
+            st.session_state["tf"] = tf
 
-# ===================== CHART =====================
+    if "tf" not in st.session_state:
+        st.session_state["tf"] = "1m"
 
-with left:
-    st.markdown("## 📈 Trading Chart")
+    selected_tf = st.session_state["tf"]
 
-    selected = st.selectbox("Select Asset", list(WATCHLIST.keys()))
-    ticker = WATCHLIST[selected]
+    period, interval = TIMEFRAMES[selected_tf]
 
-    data = get_data(ticker)
+    st.markdown(f"### {selected} ({selected_tf})")
+
+    data = get_data(ticker, period, interval)
 
     if not data.empty:
-        data = add_ema(data)
         latest = data.iloc[-1]
-
-        st.markdown(f"""
-        ### {selected}
-        <span style='font-size:30px;color:#00ff88'>{latest['Close']:.2f}</span>
-        """, unsafe_allow_html=True)
+        price = latest["Close"]
 
         fig = go.Figure()
 
+        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
             high=data['High'],
             low=data['Low'],
-            close=data['Close']
+            close=data['Close'],
+            increasing_line_color='#00ff88',
+            decreasing_line_color='#ff4444',
+            line_width=1
         ))
 
-        fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], name="EMA20", line=dict(color="yellow")))
-        fig.add_trace(go.Scatter(x=data.index, y=data["EMA50"], name="EMA50", line=dict(color="green")))
-        fig.add_trace(go.Scatter(x=data.index, y=data["EMA200"], name="EMA200", line=dict(color="blue")))
+        # Current price line
+        fig.add_hline(y=price, line_dash="dot", line_color="red")
+
+        # Support / Resistance style lines
+        fig.add_hline(y=price * 0.995, line_color="white")
+        fig.add_hline(y=price * 1.005, line_color="white")
 
         fig.update_layout(
-            height=650,
             template="plotly_dark",
-            xaxis_rangeslider_visible=False
+            height=700,
+            xaxis_rangeslider_visible=False,
+            plot_bgcolor="#000000",
+            paper_bgcolor="#000000",
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False)
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        st.markdown(f"""
+        <span style='font-size:28px;color:#00ff88'>Price: {price:.2f}</span>
+        """, unsafe_allow_html=True)
+
     else:
-        st.error("No data")
+        st.error("No data available")
 
-# ===================== RIGHT PANEL =====================
-
-with right:
+# ===================== SIDE PANEL =====================
+with col2:
     st.markdown("## 📊 Watchlist")
 
-    for name, ticker in WATCHLIST.items():
-        data = get_data(ticker)
+    for name, tkr in ASSETS.items():
+        data = get_data(tkr, "1d", "5m")
 
         if not data.empty:
             price = data["Close"].iloc[-1]
@@ -122,25 +138,26 @@ with right:
 
     st.markdown("---")
 
-    # ===================== FIXED NEWS =====================
-
+    # ===================== NEWS =====================
     st.markdown("## 📰 News")
 
-    news = get_news()
+    try:
+        news = yf.Ticker("AAPL").news
 
-    valid_news = []
+        valid_news = []
+        for item in news:
+            title = item.get("title")
+            link = item.get("link")
 
-    for item in news:
-        title = item.get("title")
-        link = item.get("link")
+            if title and link:
+                valid_news.append((title, link))
 
-        # Only keep valid entries
-        if title and link:
-            valid_news.append((title, link))
+        if valid_news:
+            for title, link in valid_news[:5]:
+                st.markdown(f"[{title}]({link})")
+                st.write("---")
+        else:
+            st.write("No valid news")
 
-    if valid_news:
-        for title, link in valid_news[:5]:
-            st.markdown(f"[{title}]({link})")
-            st.write("---")
-    else:
-        st.write("No valid news available")
+    except:
+        st.write("News not available")
