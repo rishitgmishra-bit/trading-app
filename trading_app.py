@@ -2,15 +2,16 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-from datetime import datetime
-from streamlit_autorefresh import st_autorefresh
+import time
 
 st.set_page_config(layout="wide")
 
 st.title("Advanced Trading Dashboard")
 
-# Auto refresh every 60 seconds
-st_autorefresh(interval=60000, key="refresh")
+# ===================== AUTO REFRESH =====================
+# Refresh every 60 seconds
+time.sleep(60)
+st.rerun()
 
 # ===================== FUNCTIONS =====================
 
@@ -56,7 +57,6 @@ tab1, tab2, tab3 = st.tabs(["Chart", "Investments", "News"])
 with tab1:
     st.header("Live Chart")
 
-    # Sidebar
     stock = st.sidebar.selectbox(
         "Stock",
         ["AAPL", "NVDA", "MSFT", "GOOGL", "TSLA", "COFORGE.NS"]
@@ -84,16 +84,13 @@ with tab1:
 
         latest = data.iloc[-1]
 
-        # ===== Metrics =====
         col1, col2, col3 = st.columns(3)
         col1.metric("Price", f"{latest['Close']:.2f}")
         col2.metric("High", f"{latest['High']:.2f}")
         col3.metric("Low", f"{latest['Low']:.2f}")
 
-        # ===== Chart =====
         fig = go.Figure()
 
-        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -103,19 +100,15 @@ with tab1:
             name="Candles"
         ))
 
-        # EMA
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["EMA20"],
-            line=dict(width=1),
             name="EMA 20"
         ))
 
-        # VWAP
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["VWAP"],
-            line=dict(width=1),
             name="VWAP"
         ))
 
@@ -127,8 +120,8 @@ with tab1:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # ===== RSI =====
-        st.subheader("RSI Indicator")
+        # RSI
+        st.subheader("RSI")
 
         rsi_fig = go.Figure()
         rsi_fig.add_trace(go.Scatter(
@@ -140,8 +133,6 @@ with tab1:
         rsi_fig.add_hline(y=70)
         rsi_fig.add_hline(y=30)
 
-        rsi_fig.update_layout(height=300)
-
         st.plotly_chart(rsi_fig, use_container_width=True)
 
     else:
@@ -150,20 +141,18 @@ with tab1:
 # ===================== TAB 2 =====================
 
 with tab2:
-    st.header("Investment Ideas (Long-Term)")
-
-    st.write("Not financial advice.")
+    st.header("Investment Ideas")
 
     stocks = [
-        ("AAPL", "Strong ecosystem + services"),
+        ("AAPL", "Strong ecosystem"),
         ("NVDA", "AI leader"),
         ("MSFT", "Cloud + AI"),
         ("GOOGL", "Search dominance"),
-        ("TSLA", "EV + energy"),
-        ("RELIANCE.NS", "India growth giant"),
+        ("TSLA", "EV growth"),
+        ("RELIANCE.NS", "India growth"),
         ("TCS.NS", "IT leader"),
         ("INFY.NS", "Stable IT"),
-        ("HDFCBANK.NS", "Banking strength")
+        ("HDFCBANK.NS", "Banking giant")
     ]
 
     cols = st.columns(3)
@@ -179,8 +168,7 @@ with tab2:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
                     x=data.index,
-                    y=data["Close"],
-                    name="Price"
+                    y=data["Close"]
                 ))
 
                 fig.update_layout(height=250)
@@ -189,23 +177,19 @@ with tab2:
 # ===================== TAB 3 =====================
 
 with tab3:
-    st.header("Live Market News")
+    st.header("Market News")
 
     news_tab1, news_tab2 = st.tabs(["USA", "India"])
 
     with news_tab1:
-        st.subheader("USA Market News")
         news = get_news("AAPL")
-
         for item in news:
             st.write(f"**{item['title']}**")
             st.write(f"[Read more]({item['link']})")
             st.write("---")
 
     with news_tab2:
-        st.subheader("Indian Market News")
         news = get_news("RELIANCE.NS")
-
         for item in news:
             st.write(f"**{item['title']}**")
             st.write(f"[Read more]({item['link']})")
