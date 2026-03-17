@@ -2,174 +2,180 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
-import threading
+from datetime import datetime, timedelta
 import time
 
-st.set_page_config(layout="wide")
 st.title("Simple Trading Chart Viewer")
 
-# ===================== AUTO REFRESH =====================
-def auto_refresh():
-    time.sleep(5)  # 🔥 update every 5 seconds
-    st.rerun()
-
-threading.Thread(target=auto_refresh).start()
-
-# ===================== FUNCTIONS =====================
-
-@st.cache_data(ttl=5)  # refresh data every 5 sec
-def get_data(ticker, period, interval):
-    data = yf.download(ticker, period=period, interval=interval)
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
-    return data.dropna()
-
-@st.cache_data(ttl=60)
-def get_news(ticker):
-    try:
-        stock = yf.Ticker(ticker)
-        return stock.news[:5]
-    except:
-        return []
-
-# ===================== TABS =====================
-
+# Create tabs
 tab1, tab2, tab3 = st.tabs(["Chart Viewer", "Investment Recommendations", "Market News"])
-
-# ===================== TAB 1 =====================
 
 with tab1:
     st.header("Stock Chart Viewer")
 
     st.sidebar.header("Chart Settings")
 
-    stock = st.sidebar.selectbox(
-        "Select Stock",
-        ["AAPL", "NVDA", "GOOGL", "MSFT", "TSLA", "COFORGE.NS"]
-    )
+    # Stock selection
+    stock = st.sidebar.selectbox("Select Stock", ["AAPL", "NVDA", "GOOGL", "MSFT", "TSLA", "COFORGE.NS"], index=0, key="stock_select")
 
-    timeframe = st.sidebar.selectbox(
-        "Timeframe",
-        ["1d", "5d", "1mo", "3mo", "6mo", "1y"]
-    )
+    # Timeframe selection
+    timeframe = st.sidebar.selectbox("Timeframe", ["1d", "5d", "1mo", "3mo", "6mo", "1y"], index=2, key="timeframe_select")
 
-    interval = st.sidebar.selectbox(
-        "Interval",
-        ["1m", "5m", "15m", "30m", "1h", "1d"]
-    )
+    # Interval
+    interval = st.sidebar.selectbox("Interval", ["1m", "5m", "15m", "30m", "1h", "1d"], index=5, key="interval_select")
 
-    if timeframe == "1d" and interval == "1d":
-        interval = "5m"
+    # Refresh button
+    refresh = st.sidebar.button("Refresh Data", key="refresh_btn")
 
     st.write(f"Displaying {timeframe} chart for {stock} with {interval} intervals.")
 
-    data = get_data(stock, timeframe, interval)
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def get_data(ticker, period, interval):
+        data = yf.download(ticker, period=period, interval=interval)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        return data.dropna()
+
+    if refresh or 'data' not in st.session_state:
+        with st.spinner("Fetching data..."):
+            st.session_state.data = get_data(stock, timeframe, interval)
+
+    data = st.session_state.data
 
     if not data.empty:
-        fig = go.Figure()
-
-        fig.add_trace(go.Candlestick(
+        # Create candlestick chart
+        fig = go.Figure(data=[go.Candlestick(
             x=data.index,
             open=data['Open'],
             high=data['High'],
             low=data['Low'],
-            close=data['Close']
-        ))
+            close=data['Close'],
+            name='Candlesticks'
+        )])
 
         fig.update_layout(
-            title=f"{stock} Chart",
+            title=f"{stock} Candlestick Chart ({timeframe})",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
             xaxis_rangeslider_visible=False
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
-        latest = data.iloc[-1]
+        # Show latest data
         st.subheader("Latest Data")
-
-        st.write(f"**Price:** {latest['Close']:.2f}")
+        latest = data.iloc[-1]
+        st.write(f"**Date:** {data.index[-1].strftime('%Y-%m-%d %H:%M')}")
+        st.write(f"**Open:** {latest['Open']:.2f}")
         st.write(f"**High:** {latest['High']:.2f}")
         st.write(f"**Low:** {latest['Low']:.2f}")
+        st.write(f"**Close:** {latest['Close']:.2f}")
+        st.write(f"**Volume:** {latest['Volume']:,}")
 
     else:
-        st.error("No data available.")
-
-# ===================== TAB 2 =====================
+        st.error("No data available for the selected parameters.")
 
 with tab2:
-    st.header("Long-Term Investment Recommendations")
+    st.header("Long-Term Investment Recommendations for 2026")
 
-    stocks = [
-        ("AAPL", "Strong ecosystem"),
-        ("NVDA", "AI leader"),
-        ("MSFT", "Cloud + AI"),
-        ("GOOGL", "Search dominance"),
-        ("TSLA", "EV growth"),
-        ("RELIANCE.NS", "India growth"),
-        ("TCS.NS", "IT leader"),
-        ("INFY.NS", "Stable IT"),
-        ("HDFCBANK.NS", "Banking giant")
-    ]
+    st.write("**Disclaimer:** This is not financial advice. Invest based on your research and risk tolerance. These are general suggestions based on historical performance and market trends.")
 
-    cols = st.columns(3)
+    usa_recommendations = {
+        "Apple (AAPL)": "Strong brand, consistent innovation in tech, dividends, and growth in services.",
+        "Nvidia (NVDA)": "Leader in AI and GPUs, high growth in data centers and gaming.",
+        "Microsoft (MSFT)": "Dominant in cloud (Azure), software, and AI integration.",
+        "Google (GOOGL)": "Monopoly in search, growing cloud and AI revenues.",
+        "Tesla (TSLA)": "EV leader, energy storage, and autonomous driving potential."
+    }
 
-    for i, (ticker, reason) in enumerate(stocks):
-        with cols[i % 3]:
-            st.markdown(f"### {ticker}")
-            st.write(reason)
+    india_recommendations = {
+        "Coforge (COFORGE.NS)": "Indian IT services company with strong growth in digital transformation.",
+        "Reliance Industries (RELIANCE.NS)": "Diversified conglomerate with strong presence in energy, telecom, and retail.",
+        "Infosys (INFY.NS)": "Leading Indian IT firm with global clients and steady growth.",
+        "HDFC Bank (HDFCBANK.NS)": "Major private bank with robust financials and digital banking focus.",
+        "Tata Consultancy Services (TCS.NS)": "Top IT services company with consistent performance and global expansion."
+    }
 
-            data = get_data(ticker, "6mo", "1d")
+    rec_tab1, rec_tab2 = st.tabs(["USA Market Stocks", "Indian Market Stocks"])
 
-            if not data.empty:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=data.index,
-                    y=data["Close"]
-                ))
+    def display_recommendations(rec_dict, title):
+        st.subheader(title)
+        st.write("Hover over the charts for details. Data is delayed.")
+        cols = st.columns(2)
+        col_idx = 0
+        for stock, reason in rec_dict.items():
+            ticker = stock.split('(')[1].strip(')')
+            with cols[col_idx % 2]:
+                st.markdown(f"**{stock}**")
+                st.write(reason)
+                try:
+                    data = yf.download(ticker, period='1y', interval='1d')
+                    if isinstance(data.columns, pd.MultiIndex):
+                        data.columns = data.columns.droplevel(1)
+                    if not data.empty:
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
+                        fig.update_layout(
+                            title=f"{stock} - Last Year",
+                            xaxis_title="Date",
+                            yaxis_title="Price",
+                            height=300,
+                            margin=dict(l=20, r=20, t=40, b=20)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.write("No data available.")
+                except Exception as e:
+                    st.write(f"Error loading chart: {str(e)}")
+            col_idx += 1
 
-                fig.update_layout(height=250)
-                st.plotly_chart(fig, use_container_width=True)
+    with rec_tab1:
+        display_recommendations(usa_recommendations, "USA Market Recommendations")
 
-# ===================== TAB 3 =====================
+    with rec_tab2:
+        display_recommendations(india_recommendations, "Indian Market Recommendations")
 
 with tab3:
-    st.header("Live Market News")
+    st.header("Latest Market News")
 
-    news_tab1, news_tab2 = st.tabs(["USA Market", "Indian Market"])
+    news_tab1, news_tab2 = st.tabs(["USA Stock Market", "Indian Stock Market"])
 
     with news_tab1:
-        news = get_news("AAPL")
-
-        if news:
-            for item in news:
-                title = item.get("title", "No Title")
-                link = item.get("link", "#")
-
-                st.markdown(f"### {title}")
-                st.markdown(f"[Read more]({link})")
-                st.write("---")
-        else:
-            st.write("No news available.")
+        st.subheader("USA Market News")
+        sample_news_usa = [
+            {"title": "Apple Reports Strong Q4 Earnings", "date": "2026-03-15", "link": "https://www.apple.com/newsroom/"},
+            {"title": "Fed Signals Interest Rate Pause", "date": "2026-03-14", "link": "https://www.federalreserve.gov/"},
+            {"title": "Tech Stocks Rally on AI Optimism", "date": "2026-03-13", "link": "https://www.cnbc.com/technology/"},
+            {"title": "Nvidia Surpasses Market Expectations", "date": "2026-03-12", "link": "https://nvidianews.nvidia.com/"},
+            {"title": "Market Outlook for 2026", "date": "2026-03-11", "link": "https://www.investopedia.com/"}
+        ]
+        for item in sample_news_usa:
+            st.write(f"**{item['title']}**")
+            st.write(f"Published: {item['date']}")
+            st.write(f"[Read more]({item['link']})")
+            st.write("---")
 
     with news_tab2:
-        news = get_news("RELIANCE.NS")
-
-        if news:
-            for item in news:
-                title = item.get("title", "No Title")
-                link = item.get("link", "#")
-
-                st.markdown(f"### {title}")
-                st.markdown(f"[Read more]({link})")
-                st.write("---")
-        else:
-            st.write("No news available.")
-
-# ===================== FOOTER =====================
+        st.subheader("Indian Market News")
+        sample_news_india = [
+            {"title": "Sensex Hits New High Amid Reforms", "date": "2026-03-15", "link": "https://www.bseindia.com/"},
+            {"title": "RBI Keeps Repo Rate Unchanged", "date": "2026-03-14", "link": "https://www.rbi.org.in/"},
+            {"title": "IT Stocks Lead Market Gains", "date": "2026-03-13", "link": "https://www.nseindia.com/"},
+            {"title": "TCS Expands Global Operations", "date": "2026-03-12", "link": "https://www.tcs.com/"},
+            {"title": "Indian Economy Growth Forecast", "date": "2026-03-11", "link": "https://www.economictimes.com/"}
+        ]
+        for item in sample_news_india:
+            st.write(f"**{item['title']}**")
+            st.write(f"Published: {item['date']}")
+            st.write(f"[Read more]({item['link']})")
+            st.write("---")
 
 st.sidebar.markdown("---")
 st.sidebar.write("Welcome")
 
 st.markdown(
-    "<div style='position: fixed; right: 20px; bottom: 10px;'>Rishit</div>",
+    """
+    <div style='position: fixed; right: 20px; bottom: 10px; color: gray; font-size: 16px; z-index: 9999;'>Rishit</div>
+    """,
     unsafe_allow_html=True
 )
