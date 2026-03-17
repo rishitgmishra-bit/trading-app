@@ -6,7 +6,7 @@ import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView (Clean Version)")
+st.title("📈 Clean Trading Chart")
 
 # ===================== AUTO REFRESH =====================
 if "last_update" not in st.session_state:
@@ -18,140 +18,115 @@ if time.time() - st.session_state.last_update > 5:
 
 # ===================== ASSETS =====================
 ASSETS = {
-    "Gold (XAU/USD)": "XAUUSD=X",
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "NASDAQ": "^IXIC",
-    "S&P 500": "^GSPC",
-    "Tesla": "TSLA",
-    "Apple": "AAPL"
+    "Gold (XAU/USD)": ["XAUUSD=X", "GC=F"],  # fallback added
+    "EUR/USD": ["EURUSD=X"],
+    "GBP/USD": ["GBPUSD=X"],
+    "USD/JPY": ["USDJPY=X"]
 }
 
-# ===================== TIMEFRAMES =====================
-TIMEFRAMES = {
-    "1m": ("1d", "1m"),
-    "5m": ("5d", "5m"),
-    "15m": ("5d", "15m"),
-    "1H": ("1mo", "1h"),
-    "4H": ("3mo", "1h"),
-    "1D": ("1y", "1d")
-}
+# ===================== SAFE TIMEFRAME ENGINE =====================
+def get_safe_params(tf):
+    if tf == "1m":
+        return "1d", "1m"
+    elif tf == "5m":
+        return "5d", "5m"
+    elif tf == "15m":
+        return "1mo", "15m"
+    elif tf == "1H":
+        return "3mo", "1h"
+    elif tf == "1D":
+        return "1y", "1d"
 
 # ===================== DATA =====================
 @st.cache_data(ttl=5)
-def get_data(ticker, period, interval):
-    data = yf.download(ticker, period=period, interval=interval)
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
-    return data.dropna()
+def get_data(tickers, period, interval):
 
-# ===================== LAYOUT =====================
-col1, col2 = st.columns([5,1])
+    # Try multiple tickers (for gold fallback)
+    for ticker in tickers:
+        try:
+            data = yf.download(ticker, period=period, interval=interval)
 
-# ===================== MAIN CHART =====================
-with col1:
-    selected = st.selectbox("Select Asset", list(ASSETS.keys()))
-    ticker = ASSETS[selected]
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.droplevel(1)
 
-    # Timeframe buttons
-    tf_cols = st.columns(len(TIMEFRAMES))
+            data = data.dropna()
 
-    if "tf" not in st.session_state:
-        st.session_state["tf"] = "1m"
+            if not data.empty:
+                return data
 
-    for i, tf in enumerate(TIMEFRAMES.keys()):
-        if tf_cols[i].button(tf):
-            st.session_state["tf"] = tf
+        except:
+            continue
 
-    selected_tf = st.session_state["tf"]
-    period, interval = TIMEFRAMES[selected_tf]
+    return pd.DataFrame()
 
-    st.markdown(f"### {selected} ({selected_tf})")
+# ===================== UI =====================
+selected = st.selectbox("Select Asset", list(ASSETS.keys()))
+tickers = ASSETS[selected]
 
-    data = get_data(ticker, period, interval)
+TIMEFRAMES = ["1m", "5m", "15m", "1H", "1D"]
 
-    if not data.empty:
-        latest = data.iloc[-1]
-        price = latest["Close"]
+tf_cols = st.columns(len(TIMEFRAMES))
 
-        fig = go.Figure()
+if "tf" not in st.session_state:
+    st.session_state["tf"] = "5m"
 
-        # Candlestick
-        fig.add_trace(go.Candlestick(
-            x=data.index,
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close'],
-            increasing_line_color='#00ff88',
-            decreasing_line_color='#ff4444'
-        ))
+for i, tf in enumerate(TIMEFRAMES):
+    if tf_cols[i].button(tf):
+        st.session_state["tf"] = tf
 
-        # Price line
-        fig.add_hline(y=price, line_dash="dot", line_color="red")
+selected_tf = st.session_state["tf"]
 
-        fig.update_layout(
-            template="plotly_dark",
-            height=700,
-            xaxis_rangeslider_visible=False,
-            plot_bgcolor="#000000",
-            paper_bgcolor="#000000",
-            xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=False)
-        )
+period, interval = get_safe_params(selected_tf)
 
-        st.plotly_chart(fig, use_container_width=True)
+st.markdown(f"### {selected} ({selected_tf})")
 
-        st.markdown(f"""
-        <span style='font-size:28px;color:#00ff88'>Price: {price:.2f}</span>
-        """, unsafe_allow_html=True)
+# ===================== FETCH DATA =====================
+data = get_data(tickers, period, interval)
 
-    else:
-        st.error("No data available")
+# ===================== FALLBACK FIX =====================
+if data.empty and selected_tf == "1m":
+    # auto fallback if 1m fails
+    period, interval = "5d", "5m"
+    data = get_data(tickers, period, interval)
+    st.warning("1m data unavailable → switched to 5m")
 
-# ===================== SIDE PANEL =====================
-with col2:
-    st.markdown("## 📊 Watchlist")
+# ===================== CHART =====================
+if not data.empty:
 
-    for name, tkr in ASSETS.items():
-        data = get_data(tkr, "1d", "5m")
+    data = data.tail(300)
 
-        if not data.empty:
-            price = data["Close"].iloc[-1]
-            prev = data["Close"].iloc[-2]
-            change = price - prev
-            pct = (change / prev) * 100
+    latest = data.iloc[-1]
+    price = latest["Close"]
 
-            color = "green" if change >= 0 else "red"
+    fig = go.Figure()
 
-            st.markdown(f"""
-            **{name}**  
-            <span style='color:{color}'>{price:.2f} ({pct:.2f}%)</span>
-            """, unsafe_allow_html=True)
+    fig.add_trace(go.Candlestick(
+        x=data.index,
+        open=data['Open'],
+        high=data['High'],
+        low=data['Low'],
+        close=data['Close'],
+        increasing_line_color='#00ff88',
+        decreasing_line_color='#ff4444'
+    ))
 
-    st.markdown("---")
+    fig.add_hline(y=price, line_dash="dot", line_color="red")
 
-    # ===================== NEWS =====================
-    st.markdown("## 📰 News")
+    fig.update_layout(
+        template="plotly_dark",
+        height=700,
+        xaxis_rangeslider_visible=False,
+        plot_bgcolor="#000000",
+        paper_bgcolor="#000000",
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=False)
+    )
 
-    try:
-        news = yf.Ticker("AAPL").news
+    st.plotly_chart(fig, use_container_width=True)
 
-        valid_news = []
-        for item in news:
-            title = item.get("title")
-            link = item.get("link")
+    st.markdown(f"""
+    <span style='font-size:28px;color:#00ff88'>Price: {price:.5f}</span>
+    """, unsafe_allow_html=True)
 
-            if title and link:
-                valid_news.append((title, link))
-
-        if valid_news:
-            for title, link in valid_news[:5]:
-                st.markdown(f"[{title}]({link})")
-                st.write("---")
-        else:
-            st.write("No valid news")
-
-    except:
-        st.write("News not available")
+else:
+    st.error("No data available (yfinance limitation)")
