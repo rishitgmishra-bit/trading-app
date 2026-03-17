@@ -28,6 +28,7 @@ with tab1:
     refresh = st.sidebar.button("Refresh Data", key="refresh_btn")
 
     st.write(f"Displaying {timeframe} chart for {stock} with {interval} intervals.")
+    st.write("**Note:** Data is delayed and not real-time. For true real-time data, use paid APIs.")
 
     @st.cache_data(ttl=300)  # Cache for 5 minutes
     def get_data(ticker, period, interval):
@@ -174,11 +175,3 @@ with tab3:
 
 st.sidebar.markdown("---")
 st.sidebar.write("Welcome")
-
-st.markdown(
-    """
-    <div style='position: fixed; right: 20px; bottom: 10px; color: gray; font-size: 16px; z-index: 9999;'>Rishit</div>
-    """,
-    unsafe_allow_html=True
-)
-
