@@ -11,14 +11,12 @@ st.title("Multi-Market Trading Dashboard")
 # ===================== ASSETS =====================
 
 ASSETS = {
-    # Stocks
     "Apple (AAPL)": "AAPL",
     "NVIDIA (NVDA)": "NVDA",
     "Microsoft (MSFT)": "MSFT",
     "Google (GOOGL)": "GOOGL",
     "Tesla (TSLA)": "TSLA",
 
-    # Indian
     "Reliance (RELIANCE.NS)": "RELIANCE.NS",
     "TCS (TCS.NS)": "TCS.NS",
     "Infosys (INFY.NS)": "INFY.NS",
@@ -29,20 +27,38 @@ ASSETS = {
     "USD/JPY": "USDJPY=X",
     "USD/INR": "USDINR=X",
 
-    # Gold FIXED
-    "Gold (XAU/USD)": "GC=F"
+    # Gold with fallback
+    "Gold (XAU/USD)": ["XAUUSD=X", "GC=F"]
 }
 
 # ===================== FUNCTIONS =====================
 
+def fetch_data(ticker, period, interval):
+    try:
+        data = yf.download(ticker, period=period, interval=interval)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        return data.dropna()
+    except:
+        return pd.DataFrame()
+
 @st.cache_data(ttl=10)
 def get_data(ticker, period, interval):
-    data = yf.download(ticker, period=period, interval=interval)
+    # Handle gold fallback
+    if isinstance(ticker, list):
+        for t in ticker:
+            data = fetch_data(t, period, interval)
+            if not data.empty:
+                return data
+        return pd.DataFrame()
+    else:
+        data = fetch_data(ticker, period, interval)
 
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.droplevel(1)
+        # fallback if empty
+        if data.empty and interval == "1m":
+            data = fetch_data(ticker, period, "5m")
 
-    return data.dropna()
+        return data
 
 def add_indicators(data):
     data["EMA20"] = data["Close"].ewm(span=20).mean()
@@ -58,7 +74,7 @@ def add_indicators(data):
 
 def get_news(ticker):
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker if isinstance(ticker, str) else ticker[0])
         return stock.news[:5]
     except:
         return []
@@ -101,13 +117,22 @@ with tab1:
 
         fig = go.Figure()
 
-        fig.add_trace(go.Candlestick(
-            x=data.index,
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close']
-        ))
+        # Detect if OHLC exists properly
+        if all(col in data.columns for col in ["Open", "High", "Low", "Close"]):
+            fig.add_trace(go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                name="Candles"
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=data.index,
+                y=data["Close"],
+                name="Price"
+            ))
 
         fig.add_trace(go.Scatter(
             x=data.index,
@@ -159,7 +184,6 @@ with tab2:
                     x=data.index,
                     y=data["Close"]
                 ))
-
                 fig.update_layout(height=250)
                 st.plotly_chart(fig, use_container_width=True)
             else:
@@ -170,35 +194,18 @@ with tab2:
 with tab3:
     st.header("Market News")
 
-    news_tab1, news_tab2 = st.tabs(["Global", "India"])
+    news = get_news("AAPL")
 
-    with news_tab1:
-        news = get_news("AAPL")
+    if news:
+        for item in news:
+            title = item.get("title", "No Title")
+            link = item.get("link", "#")
 
-        if news:
-            for item in news:
-                title = item.get("title", "No Title")
-                link = item.get("link", "#")
-
-                st.markdown(f"### {title}")
-                st.markdown(f"[Read more]({link})")
-                st.write("---")
-        else:
-            st.write("No news available.")
-
-    with news_tab2:
-        news = get_news("RELIANCE.NS")
-
-        if news:
-            for item in news:
-                title = item.get("title", "No Title")
-                link = item.get("link", "#")
-
-                st.markdown(f"### {title}")
-                st.markdown(f"[Read more]({link})")
-                st.write("---")
-        else:
-            st.write("No news available.")
+            st.markdown(f"### {title}")
+            st.markdown(f"[Read more]({link})")
+            st.write("---")
+    else:
+        st.write("No news available.")
 
 # ===================== AUTO REFRESH =====================
 
