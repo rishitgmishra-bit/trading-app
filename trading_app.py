@@ -185,7 +185,7 @@ st.markdown(
 # Background music (auto-play, hidden controls)
 st.markdown(
     '''
-    <audio src="https://drive.google.com/uc?export=download&id=1HCPOatKn0uA_FfBRYMHVfM5o2eGiK1S9" autoplay loop hidden></audio>
+    <audio src="https://www.dropbox.com/scl/fi/iphi2tsnp4eqhe6j622d1/APLMate.com-Sing-Ed-Sheeran.mp3?rlkey=6qrijulhnex64v8ihpkst962d&st=hjrj3y04&raw=1" autoplay loop hidden></audio>
     ''',
     unsafe_allow_html=True
 )
