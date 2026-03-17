@@ -3,20 +3,11 @@ import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
 import math
-import time
 
 st.set_page_config(layout="wide")
+st.title("📈 TradeView (Stable Build)")
 
-st.title("📈 TradeView Pro (Stable)")
-
-# ===================== AUTO REFRESH =====================
-refresh = st.sidebar.checkbox("Auto Refresh (3s)", value=True)
-
-# ===================== EXCHANGE =====================
-exchange = st.sidebar.selectbox("Exchange", ["NSE", "BSE"])
-suffix = ".NS" if exchange == "NSE" else ".BO"
-
-# ===================== SYMBOLS =====================
+# ================= SYMBOLS =================
 SYMBOLS = {
     "Gold": "GC=F",
     "EUR/USD": "EURUSD=X",
@@ -27,17 +18,16 @@ SYMBOLS = {
     "NVIDIA": "NVDA",
     "Tesla": "TSLA",
 
-    "Reliance": f"RELIANCE{suffix}",
-    "TCS": f"TCS{suffix}",
-    "Infosys": f"INFY{suffix}",
-    "HDFC Bank": f"HDFCBANK{suffix}",
-    "ICICI Bank": f"ICICIBANK{suffix}",
-    "Coforge": f"COFORGE{suffix}",
+    "Reliance": "RELIANCE.NS",
+    "TCS": "TCS.NS",
+    "Infosys": "INFY.NS",
+    "HDFC Bank": "HDFCBANK.NS",
+    "ICICI Bank": "ICICIBANK.NS",
+    "Coforge": "COFORGE.NS",
 
     "Nifty 50": "^NSEI"
 }
 
-# ===================== TIMEFRAMES =====================
 TIMEFRAMES = {
     "1m": ("1d","1m"),
     "5m": ("5d","5m"),
@@ -46,28 +36,28 @@ TIMEFRAMES = {
     "1D": ("1y","1d")
 }
 
-# ===================== SESSION =====================
+# ================= SESSION =================
 if "asset" not in st.session_state:
     st.session_state.asset = "EUR/USD"
 
 if "tf" not in st.session_state:
     st.session_state.tf = "5m"
 
-# ===================== DATA =====================
-@st.cache_data(ttl=5)
+# ================= DATA =================
+@st.cache_data(ttl=10)
 def get_data(ticker, period, interval):
     try:
-        data = yf.download(ticker, period=period, interval=interval)
-        if data is not None and not data.empty:
-            return data.dropna()
-        return pd.DataFrame()
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df.dropna()
     except:
         return pd.DataFrame()
 
-# ===================== LAYOUT =====================
+# ================= LAYOUT =================
 col1, col2 = st.columns([5,1])
 
-# ===================== MAIN =====================
+# ================= MAIN =================
 with col1:
 
     selected = st.selectbox(
@@ -77,17 +67,17 @@ with col1:
     )
     st.session_state.asset = selected
 
-    # TIMEFRAMES
+    # Timeframes
     tf_cols = st.columns(len(TIMEFRAMES))
     for i, tf in enumerate(TIMEFRAMES):
-        if tf_cols[i].button(tf, type="primary" if tf == st.session_state.tf else "secondary"):
+        if tf_cols[i].button(tf, type="primary" if tf==st.session_state.tf else "secondary"):
             st.session_state.tf = tf
 
     ticker = SYMBOLS[selected]
     period, interval = TIMEFRAMES[st.session_state.tf]
 
-    # 🔥 FIX Indian 1m issue
-    if interval == "1m" and ticker.endswith((".NS", ".BO")):
+    # 🔥 Fix Indian 1m
+    if interval == "1m" and ticker.endswith(".NS"):
         interval = "5m"
         period = "5d"
         st.warning("1m not supported → switched to 5m")
@@ -95,20 +85,19 @@ with col1:
     data = get_data(ticker, period, interval)
 
     # 🔥 fallback
-    if data.empty or len(data) < 10:
+    if data.empty:
         data = get_data(ticker, "6mo", "1d")
         st.warning("Showing Daily data")
 
-    if not data.empty:
+    if not data.empty and len(data) > 5:
 
         data = data.tail(150)
 
-        # 🔥 FOOTPRINT STYLE
+        # 🔥 Footprint style
         data["Delta"] = data["Close"] - data["Open"]
 
         fig = go.Figure()
 
-        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -119,7 +108,6 @@ with col1:
             decreasing_line_color='#ff4444'
         ))
 
-        # Volume bars
         fig.add_trace(go.Bar(
             x=data.index,
             y=data["Volume"],
@@ -127,14 +115,12 @@ with col1:
                 "#00ff88" if d >= 0 else "#ff4444"
                 for d in data["Delta"]
             ],
-            opacity=0.3,
+            opacity=0.25,
             yaxis="y2"
         ))
 
-        # Price line
-        price = data["Close"].iloc[-1]
-        if isinstance(price,(int,float)) and not math.isnan(price):
-            fig.add_hline(y=float(price), line_dash="dot", line_color="red")
+        price = float(data["Close"].iloc[-1])
+        fig.add_hline(y=price, line_dash="dot", line_color="red")
 
         fig.update_layout(
             template="plotly_dark",
@@ -146,21 +132,21 @@ with col1:
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.error("No data available")
+        st.error("No usable data")
 
-# ===================== WATCHLIST =====================
+# ================= WATCHLIST =================
 with col2:
     st.markdown("## 📊 Watchlist")
 
     for name, ticker in SYMBOLS.items():
         try:
-            data = get_data(ticker, "1d", "1m")
+            df = get_data(ticker, "1d", "5m")
 
-            if len(data) > 2:
-                last = data["Close"].iloc[-1]
-                prev = data["Close"].iloc[-2]
+            if not df.empty and len(df) > 2:
+                last = df["Close"].iloc[-1]
+                prev = df["Close"].iloc[-2]
 
-                pct = ((last - prev) / prev) * 100
+                pct = ((last - prev)/prev)*100
                 color = "green" if pct >= 0 else "red"
 
                 if st.button(name):
@@ -172,12 +158,15 @@ with col2:
                     unsafe_allow_html=True
                 )
 
+            else:
+                st.write(f"{name} - No data")
+
         except:
-            st.write(f"{name} - No data")
+            st.write(f"{name} - Error")
 
     st.markdown("---")
 
-    # ===================== NEWS =====================
+    # ================= NEWS =================
     st.markdown("## 📰 News")
 
     try:
@@ -193,8 +182,3 @@ with col2:
 
     except:
         st.write("News unavailable")
-
-# ===================== SAFE AUTO REFRESH =====================
-if refresh:
-    time.sleep(3)
-    st.experimental_rerun()
