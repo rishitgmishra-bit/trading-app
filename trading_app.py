@@ -5,7 +5,7 @@ st.set_page_config(layout="wide")
 
 st.title("📈 TradeView Pro (Real-Time)")
 
-# ===================== SYMBOL MAP =====================
+# ===================== SYMBOLS =====================
 SYMBOLS = {
     "Gold (XAU/USD)": "OANDA:XAUUSD",
     "EUR/USD": "OANDA:EURUSD",
@@ -46,9 +46,9 @@ if "tf" not in st.session_state:
     st.session_state.tf = "5m"
 
 # ===================== LAYOUT =====================
-col1, col2 = st.columns([5,1])  # ✅ FIX APPLIED HERE
+col1, col2 = st.columns([5,1])
 
-# ===================== MAIN CHART =====================
+# ===================== MAIN =====================
 with col1:
 
     selected = st.selectbox(
@@ -58,7 +58,6 @@ with col1:
     )
     st.session_state.asset = selected
 
-    # Timeframe buttons
     tf_cols = st.columns(len(TIMEFRAMES))
 
     for i, tf in enumerate(TIMEFRAMES.keys()):
@@ -73,7 +72,7 @@ with col1:
 
     st.markdown(f"### {selected} ({st.session_state.tf})")
 
-    # 🔥 REAL TRADINGVIEW CHART
+    # 🔥 TradingView Chart
     st.components.v1.html(f"""
     <div id="tradingview_chart"></div>
 
@@ -89,10 +88,6 @@ with col1:
         "theme": "dark",
         "style": "1",
         "locale": "en",
-        "toolbar_bg": "#000000",
-        "enable_publishing": false,
-        "hide_top_toolbar": false,
-        "save_image": false,
         "container_id": "tradingview_chart"
     }});
     </script>
@@ -104,26 +99,30 @@ with col2:
 
     @st.cache_data(ttl=5)
     def get_price(ticker):
-        data = yf.download(ticker, period="1d", interval="1m")
-        data = data.dropna()
+        try:
+            data = yf.download(ticker, period="1d", interval="1m")
+            data = data.dropna()
 
-        if len(data) < 2:
+            if len(data) < 2:
+                return None
+
+            price = float(data["Close"].iloc[-1])
+            prev = float(data["Close"].iloc[-2])
+
+            change = price - prev
+            pct = (change / prev) * 100
+
+            return price, change, pct
+
+        except:
             return None
-
-        price = data["Close"].iloc[-1]
-        prev = data["Close"].iloc[-2]
-
-        change = price - prev
-        pct = (change / prev) * 100
-
-        return price, change, pct
 
     for name, ticker in WATCHLIST.items():
         result = get_price(ticker)
 
         if result:
             price, change, pct = result
-            color = "green" if change >= 0 else "red"
+            color = "green" if float(change) >= 0 else "red"
 
             st.markdown(f"""
             <div style='padding:8px;border-bottom:1px solid #222'>
@@ -137,5 +136,27 @@ with col2:
             st.write(f"{name} - No data")
 
     st.markdown("---")
+
+    # ===================== NEWS =====================
     st.markdown("## 📰 News")
-    st.write("Coming next... 🚀")
+
+    try:
+        news = yf.Ticker("AAPL").news
+
+        valid_news = []
+        for item in news:
+            title = item.get("title")
+            link = item.get("link")
+
+            if title and link:
+                valid_news.append((title, link))
+
+        if valid_news:
+            for title, link in valid_news[:5]:
+                st.markdown(f"[{title}]({link})")
+                st.write("---")
+        else:
+            st.write("No news available")
+
+    except:
+        st.write("News unavailable")
