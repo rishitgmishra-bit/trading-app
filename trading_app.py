@@ -20,13 +20,10 @@ def get_data(ticker, period, interval):
     return data.dropna()
 
 def add_indicators(data):
-    # EMA
     data["EMA20"] = data["Close"].ewm(span=20).mean()
 
-    # VWAP
     data["VWAP"] = (data["Close"] * data["Volume"]).cumsum() / data["Volume"].cumsum()
 
-    # RSI
     delta = data["Close"].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -40,18 +37,9 @@ def generate_signals(data):
     data["Signal"] = 0
 
     for i in range(1, len(data)):
-        # BUY condition
-        if (
-            data["Close"].iloc[i] > data["EMA20"].iloc[i]
-            and data["RSI"].iloc[i] < 30
-        ):
+        if data["Close"].iloc[i] > data["EMA20"].iloc[i] and data["RSI"].iloc[i] < 30:
             data.loc[data.index[i], "Signal"] = 1
-
-        # SELL condition
-        elif (
-            data["Close"].iloc[i] < data["EMA20"].iloc[i]
-            and data["RSI"].iloc[i] > 70
-        ):
+        elif data["Close"].iloc[i] < data["EMA20"].iloc[i] and data["RSI"].iloc[i] > 70:
             data.loc[data.index[i], "Signal"] = -1
 
     return data
@@ -87,7 +75,6 @@ with tab1:
         ["1m", "5m", "15m", "30m", "1h", "1d"]
     )
 
-    # Fix invalid combo
     if timeframe == "1d" and interval == "1d":
         interval = "5m"
 
@@ -106,7 +93,6 @@ with tab1:
 
         fig = go.Figure()
 
-        # Candles
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -116,56 +102,51 @@ with tab1:
             name="Candles"
         ))
 
-        # EMA
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["EMA20"],
             name="EMA 20"
         ))
 
-        # VWAP
         fig.add_trace(go.Scatter(
             x=data.index,
             y=data["VWAP"],
             name="VWAP"
         ))
 
-        # BUY signals
-        buy_signals = data[data["Signal"] == 1]
+        buy = data[data["Signal"] == 1]
+        sell = data[data["Signal"] == -1]
+
         fig.add_trace(go.Scatter(
-            x=buy_signals.index,
-            y=buy_signals["Close"],
+            x=buy.index,
+            y=buy["Close"],
             mode="markers",
             marker=dict(symbol="triangle-up", size=10),
             name="BUY"
         ))
 
-        # SELL signals
-        sell_signals = data[data["Signal"] == -1]
         fig.add_trace(go.Scatter(
-            x=sell_signals.index,
-            y=sell_signals["Close"],
+            x=sell.index,
+            y=sell["Close"],
             mode="markers",
             marker=dict(symbol="triangle-down", size=10),
             name="SELL"
         ))
 
         fig.update_layout(
-            title=f"{stock} Chart with Signals",
+            title=f"{stock} Chart",
             xaxis_rangeslider_visible=False,
             height=600
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # RSI
         st.subheader("RSI")
 
         rsi_fig = go.Figure()
         rsi_fig.add_trace(go.Scatter(
             x=data.index,
-            y=data["RSI"],
-            name="RSI"
+            y=data["RSI"]
         ))
 
         rsi_fig.add_hline(y=70)
@@ -221,19 +202,33 @@ with tab3:
 
     with news_tab1:
         news = get_news("AAPL")
-        for item in news:
-            st.write(f"**{item['title']}**")
-            st.write(f"[Read more]({item['link']})")
-            st.write("---")
+
+        if news:
+            for item in news:
+                title = item.get("title", "No Title Available")
+                link = item.get("link", "#")
+
+                st.markdown(f"### {title}")
+                st.markdown(f"[Read more]({link})")
+                st.write("---")
+        else:
+            st.write("No news available.")
 
     with news_tab2:
         news = get_news("RELIANCE.NS")
-        for item in news:
-            st.write(f"**{item['title']}**")
-            st.write(f"[Read more]({item['link']})")
-            st.write("---")
 
-# ===================== AUTO REFRESH (NON-BLOCKING) =====================
+        if news:
+            for item in news:
+                title = item.get("title", "No Title Available")
+                link = item.get("link", "#")
+
+                st.markdown(f"### {title}")
+                st.markdown(f"[Read more]({link})")
+                st.write("---")
+        else:
+            st.write("No news available.")
+
+# ===================== AUTO REFRESH =====================
 
 def auto_refresh():
     time.sleep(60)
