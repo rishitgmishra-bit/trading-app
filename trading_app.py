@@ -8,6 +8,21 @@ import threading
 st.set_page_config(layout="wide")
 st.title("Advanced Trading Dashboard")
 
+# ===================== STOCK MAP =====================
+
+STOCKS = {
+    "Apple (AAPL)": "AAPL",
+    "NVIDIA (NVDA)": "NVDA",
+    "Microsoft (MSFT)": "MSFT",
+    "Google (GOOGL)": "GOOGL",
+    "Tesla (TSLA)": "TSLA",
+    "Coforge (COFORGE.NS)": "COFORGE.NS",
+    "Reliance Industries (RELIANCE.NS)": "RELIANCE.NS",
+    "TCS (TCS.NS)": "TCS.NS",
+    "Infosys (INFY.NS)": "INFY.NS",
+    "HDFC Bank (HDFCBANK.NS)": "HDFCBANK.NS"
+}
+
 # ===================== FUNCTIONS =====================
 
 @st.cache_data(ttl=60)
@@ -60,10 +75,8 @@ tab1, tab2, tab3 = st.tabs(["Chart", "Investments", "News"])
 with tab1:
     st.header("Live Chart")
 
-    stock = st.sidebar.selectbox(
-        "Stock",
-        ["AAPL", "NVDA", "MSFT", "GOOGL", "TSLA", "COFORGE.NS"]
-    )
+    selected_stock = st.sidebar.selectbox("Stock", list(STOCKS.keys()))
+    stock = STOCKS[selected_stock]
 
     timeframe = st.sidebar.selectbox(
         "Timeframe",
@@ -134,7 +147,7 @@ with tab1:
         ))
 
         fig.update_layout(
-            title=f"{stock} Chart",
+            title=f"{selected_stock} Chart",
             xaxis_rangeslider_visible=False,
             height=600
         )
@@ -162,24 +175,11 @@ with tab1:
 with tab2:
     st.header("Investment Ideas")
 
-    stocks = [
-        ("AAPL", "Strong ecosystem"),
-        ("NVDA", "AI leader"),
-        ("MSFT", "Cloud + AI"),
-        ("GOOGL", "Search dominance"),
-        ("TSLA", "EV growth"),
-        ("RELIANCE.NS", "India growth"),
-        ("TCS.NS", "IT leader"),
-        ("INFY.NS", "Stable IT"),
-        ("HDFCBANK.NS", "Banking giant")
-    ]
-
     cols = st.columns(3)
 
-    for i, (ticker, reason) in enumerate(stocks):
+    for i, (name, ticker) in enumerate(STOCKS.items()):
         with cols[i % 3]:
-            st.markdown(f"### {ticker}")
-            st.write(reason)
+            st.markdown(f"### {name}")
 
             data = get_data(ticker, "6mo", "1d")
 
