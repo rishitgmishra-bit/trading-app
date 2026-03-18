@@ -4,30 +4,51 @@ import requests
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView")
+st.title("📈 TradeView Pro (Full Version)")
 
 # ===================== API KEY =====================
-NEWS_API_KEY = "3c7ed1a35fef49bb8d2c70b6553fbcdd"
+NEWS_API_KEY = "YOUR_NEWS_API_KEY"
 
 # ===================== SYMBOLS =====================
 SYMBOLS = {
-    "Gold (XAU/USD)": "OANDA:XAUUSD",
+    # Forex
     "EUR/USD": "OANDA:EURUSD",
     "GBP/USD": "OANDA:GBPUSD",
     "USD/JPY": "OANDA:USDJPY",
+    "Gold (XAU/USD)": "OANDA:XAUUSD",
+
+    # US Stocks
     "Apple": "NASDAQ:AAPL",
     "NVIDIA": "NASDAQ:NVDA",
-    "Tesla": "NASDAQ:TSLA"
+    "Tesla": "NASDAQ:TSLA",
+
+    # 🇮🇳 Indian Stocks (RESTORED)
+    "Reliance": "NSE:RELIANCE",
+    "TCS": "NSE:TCS",
+    "Infosys": "NSE:INFY",
+    "HDFC Bank": "NSE:HDFCBANK",
+    "ICICI Bank": "NSE:ICICIBANK"
 }
 
+# ===================== WATCHLIST =====================
 WATCHLIST = {
-    "Gold (XAU/USD)": "XAUUSD=X",
+    # Forex
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
+    "Gold (XAU/USD)": "XAUUSD=X",
+
+    # US Stocks
     "Apple": "AAPL",
     "NVIDIA": "NVDA",
-    "Tesla": "TSLA"
+    "Tesla": "TSLA",
+
+    # 🇮🇳 Indian Stocks
+    "Reliance": "RELIANCE.NS",
+    "TCS": "TCS.NS",
+    "Infosys": "INFY.NS",
+    "HDFC Bank": "HDFCBANK.NS",
+    "ICICI Bank": "ICICIBANK.NS"
 }
 
 TIMEFRAMES = {
@@ -49,8 +70,8 @@ if "tf" not in st.session_state:
 def ai_sentiment(text):
     text = text.lower()
 
-    bullish = ["rise","gain","bull","surge","rally","strong","growth"]
-    bearish = ["fall","drop","bear","decline","weak","sell","loss"]
+    bullish = ["rise","gain","bull","surge","rally","strong"]
+    bearish = ["fall","drop","bear","decline","weak"]
 
     if any(w in text for w in bullish):
         return "🟢 Bullish"
@@ -59,40 +80,54 @@ def ai_sentiment(text):
     else:
         return "⚪ Neutral"
 
-# ===================== NEWS FIX =====================
+# ===================== NEWS =====================
 def get_news(asset):
 
     query_map = {
         "EUR/USD": "US dollar forex market",
-        "GBP/USD": "British pound forex market",
-        "USD/JPY": "Japanese yen forex market",
-        "Gold (XAU/USD)": "gold price market",
+        "GBP/USD": "British pound forex",
+        "USD/JPY": "Japanese yen forex",
+        "Gold (XAU/USD)": "gold market",
 
         "Apple": "Apple stock",
         "NVIDIA": "NVIDIA AI stock",
-        "Tesla": "Tesla stock"
+        "Tesla": "Tesla stock",
+
+        "Reliance": "Reliance Industries India",
+        "TCS": "TCS IT India",
+        "Infosys": "Infosys stock",
+        "HDFC Bank": "HDFC Bank India",
+        "ICICI Bank": "ICICI Bank India"
     }
 
-    query = query_map.get(asset, "global stock market")
+    query = query_map.get(asset, "stock market")
 
-    url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize=10&apiKey={"3c7ed1a35fef49bb8d2c70b6553fbcdd"}"
+    url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize=20&apiKey={NEWS_API_KEY}"
 
     try:
         res = requests.get(url)
         data = res.json()
 
-        if data.get("status") != "ok":
-            return []
-
         articles = data.get("articles", [])
 
-        # 🔥 FALLBACK (never empty)
-        if not articles:
-            fallback_url = f"https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey={"3c7ed1a35fef49bb8d2c70b6553fbcdd"}"
-            res = requests.get(fallback_url)
-            return res.json().get("articles", [])
+        # 🔥 REMOVE DUPLICATES
+        seen = set()
+        unique = []
 
-        return articles
+        for a in articles:
+            title = a.get("title", "")
+            if title and title not in seen:
+                seen.add(title)
+                unique.append(a)
+
+        # fallback
+        if len(unique) < 3:
+            fallback = requests.get(
+                f"https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey={NEWS_API_KEY}"
+            )
+            return fallback.json().get("articles", [])
+
+        return unique
 
     except:
         return []
@@ -110,38 +145,30 @@ with col1:
     )
     st.session_state.asset = selected
 
-    # Timeframe buttons
     tf_cols = st.columns(len(TIMEFRAMES))
 
-    for i, tf in enumerate(TIMEFRAMES.keys()):
+    for i, tf in enumerate(TIMEFRAMES):
         if tf_cols[i].button(
             tf,
-            type="primary" if st.session_state.tf == tf else "secondary",
-            key=f"tf_{tf}"
+            type="primary" if tf == st.session_state.tf else "secondary"
         ):
             st.session_state.tf = tf
 
-    symbol = SYMBOLS[selected]
-    interval = TIMEFRAMES[st.session_state.tf]
-
     st.markdown(f"### {selected} ({st.session_state.tf})")
 
-    # TradingView Chart
+    # TradingView chart
     st.components.v1.html(f"""
     <div id="tv_chart"></div>
-
     <script src="https://s3.tradingview.com/tv.js"></script>
-
     <script>
     new TradingView.widget({{
         "width": "100%",
         "height": 600,
-        "symbol": "{symbol}",
-        "interval": "{interval}",
-        "timezone": "Asia/Kolkata",
+        "symbol": "{SYMBOLS[selected]}",
+        "interval": "{TIMEFRAMES[st.session_state.tf]}",
         "theme": "dark",
         "style": "1",
-        "locale": "en",
+        "timezone": "Asia/Kolkata",
         "container_id": "tv_chart"
     }});
     </script>
@@ -155,18 +182,13 @@ with col2:
     @st.cache_data(ttl=5)
     def get_price(ticker):
         try:
-            data = yf.download(ticker, period="1d", interval="1m", progress=False)
+            d = yf.download(ticker, period="1d", interval="1m", progress=False)
 
-            if data is None or data.empty:
+            if d.empty or len(d) < 2:
                 return None
 
-            data = data.dropna()
-
-            if len(data) < 2:
-                return None
-
-            price = float(data["Close"].iloc[-1])
-            prev = float(data["Close"].iloc[-2])
+            price = float(d["Close"].iloc[-1])
+            prev = float(d["Close"].iloc[-2])
 
             pct = ((price - prev) / prev) * 100
 
@@ -182,7 +204,7 @@ with col2:
             price, pct = res
             color = "green" if pct >= 0 else "red"
 
-            if st.button(f"{name}   {pct:.2f}%", key=name):
+            if st.button(f"{name} ({pct:.2f}%)"):
                 st.session_state.asset = name
                 st.rerun()
 
@@ -194,23 +216,16 @@ with col2:
     st.markdown("---")
 
     # ===================== NEWS =====================
-    st.markdown("## 📰 Market News + Sentiment")
+    st.markdown("## 📰 Market News")
 
     articles = get_news(st.session_state.asset)
 
-    if articles:
+    for a in articles[:6]:
+        title = a.get("title", "")
+        url = a.get("url", "")
 
-        for article in articles[:6]:
+        sentiment = ai_sentiment(title)
 
-            title = article.get("title", "")
-            url = article.get("url", "")
-            desc = article.get("description", "")
-
-            sentiment = ai_sentiment(title + " " + desc)
-
-            st.markdown(f"[{title}]({url})")
-            st.write(sentiment)
-            st.write("---")
-
-    else:
-        st.warning("No news found (API limit or key issue)")
+        st.markdown(f"[{title}]({url})")
+        st.write(sentiment)
+        st.write("---")
