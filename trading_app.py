@@ -76,7 +76,7 @@ def get_news(asset):
 
     query = query_map.get(asset, "stock market")
 
-    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={NEWS_API_KEY}"
+    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
 
     try:
         res = requests.get(url)
