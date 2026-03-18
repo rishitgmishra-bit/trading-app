@@ -6,63 +6,116 @@ import time
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro")
+st.title("📈 TradeView Pro Max")
 
 # ===================== WATCHLIST =====================
 WATCHLIST = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "Gold (XAU/USD)": "GC=F",
+
     "Apple": "AAPL",
     "NVIDIA": "NVDA",
     "Tesla": "TSLA",
-    "Microsoft": "MSFT",
-    "Amazon": "AMZN",
-    "Coforge": "COFORGE.NS"
+    "Microsoft": "MSFT"
 }
 
 # ===================== SESSION =====================
 if "selected" not in st.session_state:
-    st.session_state.selected = "Apple"
+    st.session_state.selected = "EUR/USD"
 
 # ===================== LAYOUT =====================
 col1, col2 = st.columns([4,1])
 
+# ===================== INDICATORS =====================
+def add_indicators(df):
+
+    # EMA
+    df["EMA"] = df["Close"].ewm(span=20).mean()
+
+    # VWAP
+    df["VWAP"] = (df["Volume"] * (df["High"] + df["Low"] + df["Close"]) / 3).cumsum() / df["Volume"].cumsum()
+
+    # RSI
+    delta = df["Close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    df["RSI"] = 100 - (100 / (1 + rs))
+
+    return df
+
 # ===================== MAIN CHART =====================
 with col1:
 
-    st.subheader(f"{st.session_state.selected} Chart")
+    st.subheader(f"{st.session_state.selected}")
 
-    timeframe = st.selectbox("Timeframe", ["1d","5d","1mo","3mo","6mo","1y"])
-
-    @st.cache_data(ttl=10)
-    def get_data(symbol):
-        data = yf.download(symbol, period=timeframe, interval="1m")
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.droplevel(1)
-        return data.dropna()
+    timeframe = st.selectbox("Timeframe", ["5m","15m","1h","1d"], index=0)
 
     ticker = WATCHLIST[st.session_state.selected]
+
+    @st.cache_data(ttl=5)
+    def get_data(symbol):
+        return yf.download(symbol, period="5d", interval=timeframe).dropna()
+
     data = get_data(ticker)
 
     if not data.empty:
-        fig = go.Figure(data=[go.Candlestick(
+
+        data = add_indicators(data)
+
+        fig = go.Figure()
+
+        # Candles
+        fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
             high=data['High'],
             low=data['Low'],
-            close=data['Close']
-        )])
+            close=data['Close'],
+            name="Candles"
+        ))
+
+        # EMA
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["EMA"],
+            line=dict(color="blue"),
+            name="EMA"
+        ))
+
+        # VWAP
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["VWAP"],
+            line=dict(color="orange"),
+            name="VWAP"
+        ))
 
         fig.update_layout(
             template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            height=600
+            height=600,
+            xaxis_rangeslider_visible=False
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        # RSI
+        st.markdown("### RSI")
+        rsi_fig = go.Figure()
+        rsi_fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["RSI"],
+            line=dict(color="purple")
+        ))
+        rsi_fig.update_layout(template="plotly_dark", height=200)
+        st.plotly_chart(rsi_fig, use_container_width=True)
+
     else:
         st.error("No data available")
 
-# ===================== SIDEBAR PANEL =====================
+# ===================== WATCHLIST =====================
 with col2:
 
     st.markdown("## 📊 Watchlist")
@@ -70,58 +123,51 @@ with col2:
     @st.cache_data(ttl=5)
     def get_price(symbol):
         try:
-            data = yf.download(symbol, period="1d", interval="1m")
-            data = data.dropna()
-
-            if len(data) < 2:
+            d = yf.download(symbol, period="1d", interval="1m")
+            d = d.dropna()
+            if len(d) < 2:
                 return None
-
-            price = float(data["Close"].iloc[-1])
-            prev = float(data["Close"].iloc[-2])
-
-            change = price - prev
-            pct = (change / prev) * 100
-
+            price = d["Close"].iloc[-1]
+            prev = d["Close"].iloc[-2]
+            pct = ((price - prev)/prev)*100
             return price, pct
         except:
             return None
 
     for name, symbol in WATCHLIST.items():
-        result = get_price(symbol)
+        res = get_price(symbol)
 
-        if result:
-            price, pct = result
+        if res:
+            price, pct = res
             color = "green" if pct >= 0 else "red"
 
-            if st.button(f"{name} ({price:.2f}) {pct:.2f}%"):
+            if st.button(f"{name}"):
                 st.session_state.selected = name
                 st.rerun()
 
+            st.markdown(f"<span style='color:{color}'>{price:.2f} ({pct:.2f}%)</span>", unsafe_allow_html=True)
         else:
-            st.write(f"{name} - No data")
+            st.write(f"{name} - no data")
 
     st.markdown("---")
 
-    # ===================== NEWS =====================
+    # ===================== NEWS (FIXED) =====================
     st.markdown("## 📰 News")
 
     try:
         news = yf.Ticker("AAPL").news
 
-        valid_news = []
-        for item in news:
-            title = item.get("title")
-            link = item.get("link")
+        if news:
+            for item in news[:8]:
+                title = item.get("title", "No Title")
+                link = item.get("link", "#")
+                st.markdown(f"[{title}]({link})")
+                st.write("---")
+        else:
+            st.write("No news found")
 
-            if title and link:
-                valid_news.append((title, link))
-
-        for title, link in valid_news[:5]:
-            st.markdown(f"[{title}]({link})")
-            st.write("---")
-
-    except:
-        st.write("News unavailable")
+    except Exception as e:
+        st.write("News loading error")
 
 # ===================== AUTO REFRESH =====================
 time.sleep(5)
