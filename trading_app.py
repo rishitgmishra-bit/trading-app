@@ -1,17 +1,13 @@
 import streamlit as st
 import yfinance as yf
 import requests
-import openai
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro AI")
+st.title("📈 TradeView Pro (AI + News)")
 
-# ===================== API KEYS =====================
+# ===================== API KEY =====================
 NEWS_API_KEY = "YOUR_NEWS_API_KEY"
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"   # optional but recommended
-
-openai.api_key = OPENAI_API_KEY
 
 # ===================== SYMBOLS =====================
 SYMBOLS = {
@@ -34,45 +30,34 @@ WATCHLIST = {
     "Tesla": "TSLA"
 }
 
+TIMEFRAMES = {
+    "1m": "1",
+    "5m": "5",
+    "15m": "15",
+    "1H": "60",
+    "1D": "D"
+}
+
 # ===================== SESSION =====================
 if "asset" not in st.session_state:
     st.session_state.asset = "EUR/USD"
 
-# ===================== LAYOUT =====================
-col1, col2 = st.columns([5,1])
+if "tf" not in st.session_state:
+    st.session_state.tf = "5m"
 
-# ===================== AI SENTIMENT =====================
+# ===================== SENTIMENT =====================
 def ai_sentiment(text):
 
-    if not OPENAI_API_KEY:
-        # fallback
-        text = text.lower()
-        if any(w in text for w in ["rise","gain","bull","surge"]):
-            return "🟢 Bullish"
-        elif any(w in text for w in ["fall","drop","bear","decline"]):
-            return "🔴 Bearish"
-        else:
-            return "⚪ Neutral"
+    text = text.lower()
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Classify sentiment as Bullish, Bearish or Neutral"},
-                {"role": "user", "content": text}
-            ]
-        )
+    bullish_words = ["rise","gain","bull","surge","rally","strong"]
+    bearish_words = ["fall","drop","bear","decline","weak","sell"]
 
-        result = response.choices[0].message.content.lower()
-
-        if "bull" in result:
-            return "🟢 Bullish"
-        elif "bear" in result:
-            return "🔴 Bearish"
-        else:
-            return "⚪ Neutral"
-
-    except:
+    if any(w in text for w in bullish_words):
+        return "🟢 Bullish"
+    elif any(w in text for w in bearish_words):
+        return "🔴 Bearish"
+    else:
         return "⚪ Neutral"
 
 # ===================== NEWS =====================
@@ -82,7 +67,7 @@ def get_news(asset):
         "EUR/USD": "forex euro dollar forecast",
         "GBP/USD": "forex pound dollar forecast",
         "USD/JPY": "yen forex market",
-        "Gold (XAU/USD)": "gold market price",
+        "Gold (XAU/USD)": "gold price market",
 
         "Apple": "Apple stock news",
         "NVIDIA": "NVIDIA AI stock",
@@ -95,19 +80,41 @@ def get_news(asset):
 
     try:
         res = requests.get(url)
-        return res.json().get("articles", [])
+        data = res.json()
+        return data.get("articles", [])
     except:
         return []
+
+# ===================== LAYOUT =====================
+col1, col2 = st.columns([5,1])
 
 # ===================== MAIN =====================
 with col1:
 
-    selected = st.selectbox("Asset", list(SYMBOLS.keys()))
+    selected = st.selectbox(
+        "Asset",
+        list(SYMBOLS.keys()),
+        index=list(SYMBOLS.keys()).index(st.session_state.asset)
+    )
     st.session_state.asset = selected
 
-    st.markdown(f"### {selected}")
+    # Timeframe buttons
+    tf_cols = st.columns(len(TIMEFRAMES))
 
-    # TradingView widget
+    for i, tf in enumerate(TIMEFRAMES.keys()):
+        if tf_cols[i].button(
+            tf,
+            type="primary" if st.session_state.tf == tf else "secondary",
+            key=f"tf_{tf}"
+        ):
+            st.session_state.tf = tf
+
+    symbol = SYMBOLS[selected]
+    interval = TIMEFRAMES[st.session_state.tf]
+
+    st.markdown(f"### {selected} ({st.session_state.tf})")
+
+    # TradingView Chart
     st.components.v1.html(f"""
     <div id="tv_chart"></div>
 
@@ -117,11 +124,12 @@ with col1:
     new TradingView.widget({{
         "width": "100%",
         "height": 600,
-        "symbol": "{SYMBOLS[selected]}",
-        "interval": "5",
+        "symbol": "{symbol}",
+        "interval": "{interval}",
         "timezone": "Asia/Kolkata",
         "theme": "dark",
         "style": "1",
+        "locale": "en",
         "container_id": "tv_chart"
     }});
     </script>
@@ -137,13 +145,18 @@ with col2:
         try:
             data = yf.download(ticker, period="1d", interval="1m", progress=False)
 
-            if data.empty:
+            if data is None or data.empty:
+                return None
+
+            data = data.dropna()
+
+            if len(data) < 2:
                 return None
 
             price = float(data["Close"].iloc[-1])
             prev = float(data["Close"].iloc[-2])
 
-            pct = ((price - prev)/prev)*100
+            pct = ((price - prev) / prev) * 100
 
             return price, pct
         except:
@@ -155,23 +168,27 @@ with col2:
 
         if res:
             price, pct = res
+            color = "green" if pct >= 0 else "red"
 
-            if st.button(f"{name} ({pct:.2f}%)"):
+            if st.button(f"{name}   {pct:.2f}%", key=name):
                 st.session_state.asset = name
                 st.rerun()
 
-            st.write(f"{price:.2f}")
+            st.markdown(f"<span style='color:{color}'>{price:.2f}</span>", unsafe_allow_html=True)
+
+        else:
+            st.write(f"{name} - No data")
 
     st.markdown("---")
 
-    # ===================== NEWS PANEL =====================
+    # ===================== NEWS =====================
     st.markdown("## 📰 AI News + Sentiment")
 
     articles = get_news(st.session_state.asset)
 
     if articles:
 
-        for article in articles[:5]:
+        for article in articles[:6]:
 
             title = article.get("title", "")
             url = article.get("url", "")
@@ -184,4 +201,4 @@ with col2:
             st.write("---")
 
     else:
-        st.write("No news found")
+        st.warning("No news found")
