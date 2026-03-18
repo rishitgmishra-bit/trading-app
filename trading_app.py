@@ -75,7 +75,7 @@ def get_news(asset):
 
     query = query_map.get(asset, "global stock market")
 
-    url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize=10&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
+    url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize=10&apiKey={"3c7ed1a35fef49bb8d2c70b6553fbcdd"}"
 
     try:
         res = requests.get(url)
@@ -88,7 +88,7 @@ def get_news(asset):
 
         # 🔥 FALLBACK (never empty)
         if not articles:
-            fallback_url = f"https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
+            fallback_url = f"https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey={"3c7ed1a35fef49bb8d2c70b6553fbcdd"}"
             res = requests.get(fallback_url)
             return res.json().get("articles", [])
 
