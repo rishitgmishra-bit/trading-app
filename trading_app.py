@@ -1,105 +1,115 @@
 import streamlit as st
+import yfinance as yf
+import plotly.graph_objects as go
+import pandas as pd
 
 st.set_page_config(layout="wide")
-st.title("📈 TradeView Pro (REAL DATA)")
 
-# ================= SYMBOLS =================
-SYMBOLS = {
-    "BTC/USDT": "btcusdt",
-    "ETH/USDT": "ethusdt",
-    "BNB/USDT": "bnbusdt"
-}
+st.title("📈 TradeView Lite (Streamlit)")
 
-TIMEFRAMES = {
-    "1m": "1m",
-    "5m": "5m",
-    "15m": "15m"
-}
+# ===================== TABS =====================
+tab1, tab2, tab3 = st.tabs(["Chart Viewer", "Investment Ideas", "Market News"])
 
-# ================= SESSION =================
-assets = list(SYMBOLS.keys())
+# ===================== TAB 1 =====================
+with tab1:
+    st.sidebar.header("Chart Settings")
 
-if "asset" not in st.session_state:
-    st.session_state.asset = assets[0]
+    STOCKS = {
+        "Apple": "AAPL",
+        "NVIDIA": "NVDA",
+        "Google": "GOOGL",
+        "Microsoft": "MSFT",
+        "Tesla": "TSLA",
+        "Coforge (India)": "COFORGE.NS"
+    }
 
-if "tf" not in st.session_state:
-    st.session_state.tf = "1m"
+    stock_name = st.sidebar.selectbox("Select Asset", list(STOCKS.keys()))
+    ticker = STOCKS[stock_name]
 
-# ================= LAYOUT =================
-col1, col2 = st.columns([5,1])
+    timeframe = st.sidebar.selectbox("Timeframe", ["1d", "5d", "1mo", "3mo", "6mo", "1y"])
+    interval = st.sidebar.selectbox("Interval", ["1m", "5m", "15m", "30m", "1h", "1d"])
 
-# ================= MAIN =================
-with col1:
+    st.subheader(f"{stock_name} Chart")
 
-    selected = st.selectbox("Asset", assets)
-    st.session_state.asset = selected
+    # ===================== DATA =====================
+    @st.cache_data(ttl=60)
+    def get_data():
+        data = yf.download(ticker, period=timeframe, interval=interval)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.droplevel(1)
+        return data.dropna()
 
-    tf_cols = st.columns(len(TIMEFRAMES))
+    data = get_data()
 
-    for i, tf in enumerate(TIMEFRAMES):
-        if tf_cols[i].button(
-            tf,
-            type="primary" if tf == st.session_state.tf else "secondary"
-        ):
-            st.session_state.tf = tf
+    if not data.empty:
+        fig = go.Figure(data=[go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close']
+        )])
 
-    symbol = SYMBOLS[selected]
-    interval = TIMEFRAMES[st.session_state.tf]
+        fig.update_layout(
+            xaxis_rangeslider_visible=False,
+            template="plotly_dark",
+            height=600
+        )
 
-    st.markdown(f"### {selected} ({interval})")
+        st.plotly_chart(fig, use_container_width=True)
 
-    # ================= REAL WEBSOCKET CHART =================
-    st.components.v1.html(f"""
-    <div id="chart" style="height:600px;"></div>
+        # ===================== LATEST =====================
+        latest = data.iloc[-1]
+        st.markdown("### Latest Data")
+        st.write(f"Close: {latest['Close']:.2f}")
+        st.write(f"High: {latest['High']:.2f}")
+        st.write(f"Low: {latest['Low']:.2f}")
+    else:
+        st.error("No data available")
 
-    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+# ===================== TAB 2 =====================
+with tab2:
+    st.header("📊 Investment Ideas")
 
-    <script>
-    const chart = LightweightCharts.createChart(document.getElementById('chart'), {{
-        layout: {{ background: {{ color: '#0a0a0a' }}, textColor: '#d1d4dc' }},
-        grid: {{
-            vertLines: {{ color: '#1e1e1e' }},
-            horzLines: {{ color: '#1e1e1e' }},
-        }},
-    }});
+    ideas = {
+        "Apple": "Strong ecosystem, consistent growth",
+        "NVIDIA": "AI leader, strong demand",
+        "Microsoft": "Cloud + AI dominance",
+        "Reliance": "India growth + diversification",
+        "TCS": "Stable IT giant"
+    }
 
-    const candleSeries = chart.addCandlestickSeries({{
-        upColor: '#00ff88',
-        downColor: '#ff4444',
-        borderVisible: false,
-        wickUpColor: '#00ff88',
-        wickDownColor: '#ff4444'
-    }});
+    for name, desc in ideas.items():
+        st.markdown(f"### {name}")
+        st.write(desc)
+        try:
+            data = yf.download(STOCKS.get(name, "AAPL"), period="1y")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=data.index, y=data['Close']))
+            fig.update_layout(height=250, template="plotly_dark")
+            st.plotly_chart(fig, use_container_width=True)
+        except:
+            st.write("Chart unavailable")
 
-    let socket = new WebSocket("wss://stream.binance.com:9443/ws/{symbol}@kline_{interval}");
+# ===================== TAB 3 =====================
+with tab3:
+    st.header("📰 Market News")
 
-    socket.onmessage = function(event) {{
-        let msg = JSON.parse(event.data);
-        let k = msg.k;
+    try:
+        news = yf.Ticker("AAPL").news
 
-        let candle = {{
-            time: k.t / 1000,
-            open: parseFloat(k.o),
-            high: parseFloat(k.h),
-            low: parseFloat(k.l),
-            close: parseFloat(k.c)
-        }};
+        if news:
+            for item in news[:10]:
+                title = item.get("title", "No title")
+                link = item.get("link", "#")
+                st.markdown(f"### [{title}]({link})")
+                st.write("---")
+        else:
+            st.write("No news available")
 
-        candleSeries.update(candle);
-    }};
-    </script>
-    """, height=620)
+    except:
+        st.write("News unavailable")
 
-# ================= WATCHLIST =================
-with col2:
-    st.markdown("## 📊 Watchlist")
-
-    for name in SYMBOLS:
-        if st.button(name):
-            st.session_state.asset = name
-            st.rerun()
-
-    st.markdown("---")
-
-    st.markdown("## 🟢 Status")
-    st.write("Live WebSocket Connected")
+# ===================== SIDEBAR =====================
+st.sidebar.markdown("---")
+st.sidebar.write("👋 Welcome to TradeView Lite")
