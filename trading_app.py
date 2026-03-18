@@ -4,7 +4,7 @@ import requests
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro (AI + News)")
+st.title("📈 TradeView")
 
 # ===================== API KEY =====================
 NEWS_API_KEY = "3c7ed1a35fef49bb8d2c70b6553fbcdd"
@@ -47,41 +47,53 @@ if "tf" not in st.session_state:
 
 # ===================== SENTIMENT =====================
 def ai_sentiment(text):
-
     text = text.lower()
 
-    bullish_words = ["rise","gain","bull","surge","rally","strong"]
-    bearish_words = ["fall","drop","bear","decline","weak","sell"]
+    bullish = ["rise","gain","bull","surge","rally","strong","growth"]
+    bearish = ["fall","drop","bear","decline","weak","sell","loss"]
 
-    if any(w in text for w in bullish_words):
+    if any(w in text for w in bullish):
         return "🟢 Bullish"
-    elif any(w in text for w in bearish_words):
+    elif any(w in text for w in bearish):
         return "🔴 Bearish"
     else:
         return "⚪ Neutral"
 
-# ===================== NEWS =====================
+# ===================== NEWS FIX =====================
 def get_news(asset):
 
     query_map = {
-        "EUR/USD": "forex euro dollar forecast",
-        "GBP/USD": "forex pound dollar forecast",
-        "USD/JPY": "yen forex market",
+        "EUR/USD": "US dollar forex market",
+        "GBP/USD": "British pound forex market",
+        "USD/JPY": "Japanese yen forex market",
         "Gold (XAU/USD)": "gold price market",
 
-        "Apple": "Apple stock news",
+        "Apple": "Apple stock",
         "NVIDIA": "NVIDIA AI stock",
-        "Tesla": "Tesla stock news"
+        "Tesla": "Tesla stock"
     }
 
-    query = query_map.get(asset, "stock market")
+    query = query_map.get(asset, "global stock market")
 
-    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
+    url = f"https://newsapi.org/v2/everything?q={query}&language=en&sortBy=publishedAt&pageSize=10&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
 
     try:
         res = requests.get(url)
         data = res.json()
-        return data.get("articles", [])
+
+        if data.get("status") != "ok":
+            return []
+
+        articles = data.get("articles", [])
+
+        # 🔥 FALLBACK (never empty)
+        if not articles:
+            fallback_url = f"https://newsapi.org/v2/top-headlines?category=business&language=en&apiKey={3c7ed1a35fef49bb8d2c70b6553fbcdd}"
+            res = requests.get(fallback_url)
+            return res.json().get("articles", [])
+
+        return articles
+
     except:
         return []
 
@@ -182,7 +194,7 @@ with col2:
     st.markdown("---")
 
     # ===================== NEWS =====================
-    st.markdown("## 📰 AI News + Sentiment")
+    st.markdown("## 📰 Market News + Sentiment")
 
     articles = get_news(st.session_state.asset)
 
@@ -201,4 +213,4 @@ with col2:
             st.write("---")
 
     else:
-        st.warning("No news found")
+        st.warning("No news found (API limit or key issue)")
