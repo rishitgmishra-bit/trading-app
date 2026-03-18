@@ -3,7 +3,7 @@ import yfinance as yf
 
 st.set_page_config(layout="wide")
 
-st.title("📈 TradeView Pro (Real-Time)")
+st.title("📈 TradeView (Real-Time)")
 
 # ===================== SYMBOLS =====================
 SYMBOLS = {
@@ -152,24 +152,37 @@ with col2:
 
     # ===================== NEWS =====================
     st.markdown("## 📰 News")
+import requests
+
+NEWS_API_KEY = "3c7ed1a35fef49bb8d2c70b6553fbcdd"
+
+def get_real_news(asset):
+
+    query_map = {
+        "EUR/USD": "forex euro dollar",
+        "GBP/USD": "forex pound dollar",
+        "USD/JPY": "forex yen dollar",
+        "Gold (XAU/USD)": "gold market",
+
+        "Apple": "apple stock",
+        "NVIDIA": "nvidia stock",
+        "Tesla": "tesla stock",
+        "Reliance": "reliance industries",
+        "TCS": "tcs india"
+    }
+
+    query = query_map.get(asset, "stock market")
+
+    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&pageSize=10&apiKey={NEWS_API_KEY}"
 
     try:
-        news = yf.Ticker("AAPL").news
+        res = requests.get(url)
+        data = res.json()
 
-        valid_news = []
-        for item in news:
-            title = item.get("title")
-            link = item.get("link")
+        if "articles" in data:
+            return data["articles"]
 
-            if title and link:
-                valid_news.append((title, link))
-
-        if valid_news:
-            for title, link in valid_news[:5]:
-                st.markdown(f"[{title}]({link})")
-                st.write("---")
-        else:
-            st.write("No news available")
+        return []
 
     except:
-        st.write("News unavailable")
+        return []
