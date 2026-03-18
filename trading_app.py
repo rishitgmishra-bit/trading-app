@@ -7,7 +7,7 @@ st.set_page_config(layout="wide")
 st.title("📈 TradeView Pro (Full Version)")
 
 # ===================== API KEY =====================
-NEWS_API_KEY = "YOUR_NEWS_API_KEY"
+NEWS_API_KEY = "3c7ed1a35fef49bb8d2c70b6553fbcdd"
 
 # ===================== SYMBOLS =====================
 SYMBOLS = {
